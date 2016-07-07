@@ -1,0 +1,85 @@
+/*
+ * Copyright 2015 - 2016 Red Bull Media House GmbH <http://www.redbullmediahouse.com> - all rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.rbmhtechnology.eventuate.adapter.vertx
+
+import com.rbmhtechnology.eventuate.{ DurableEvent, EventsourcedWriter }
+import io.vertx.core.Vertx
+import io.vertx.core.eventbus.{ MessageProducer => VertxMessageProducer }
+
+import scala.concurrent.{ ExecutionContext, Future }
+
+trait MessageProducer {
+  def vertx: Vertx
+  def ebAddress: String
+  def producer: VertxMessageProducer[DurableEvent]
+}
+
+trait MessagePublisher extends MessageProducer {
+  override lazy val producer = vertx.eventBus().publisher[DurableEvent](ebAddress)
+}
+
+trait MessageSender extends MessageProducer {
+  override lazy val producer = vertx.eventBus().sender[DurableEvent](ebAddress)
+}
+
+trait MessageDelivery extends MessageProducer {
+  def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit]
+}
+
+trait UnboundDelivery extends MessageDelivery {
+  override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] =
+    Future(events.foreach(producer.send))
+}
+
+trait ReactiveDelivery extends MessageDelivery {
+  override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] = ??? // TODO
+
+  def backpressureOptions: BackpressureOptions
+
+  producer.setWriteQueueMaxSize(backpressureOptions.maxItems)
+}
+
+trait ReadLogAdapter extends EventsourcedWriter[Long, Long] with MessageDelivery {
+  import context.dispatcher
+
+  def storageProvider: StorageProvider
+
+  var events: Vector[DurableEvent] = Vector.empty
+
+  override def onCommand: Receive = {
+    case _ =>
+  }
+
+  override def onEvent: Receive = {
+    case event => events = events :+ lastHandledEvent
+  }
+
+  override def write(): Future[Long] = {
+    val snr = lastSequenceNr
+    val ft = deliver(events).flatMap(x => storageProvider.writeProgress(id, snr))
+
+    events = Vector.empty
+    ft
+  }
+
+  override def read(): Future[Long] = {
+    storageProvider.readProgress(id)
+  }
+
+  override def readSuccess(result: Long): Option[Long] =
+    Some(result + 1L)
+}

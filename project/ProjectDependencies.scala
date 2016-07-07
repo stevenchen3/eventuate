@@ -22,6 +22,7 @@ object ProjectDependencyVersions {
   val Log4jVersion = "2.5"
   val ProtobufVersion = "2.5.0"
   val SparkVersion = "1.6.1"
+  val VertxVersion = "3.3.0"
 }
 
 object ProjectDependencies {
@@ -49,5 +50,8 @@ object ProjectDependencies {
   val Java8Compat =          "org.scala-lang.modules"     % "scala-java8-compat_2.11"   % "0.7.0"
   val Scalatest =            "org.scalatest"             %% "scalatest"                 % "2.1.4"
   val Scalaz =               "org.scalaz"                %% "scalaz-core"               % "7.1.0"
+  val VertxCore =            "io.vertx"                   % "vertx-core"                % VertxVersion
+  val VertxRxJava =          "io.vertx"                   % "vertx-rx-java"             % VertxVersion
+  val VertxReactiveStream =  "io.vertx"                   % "vertx-reactive-streams"    % VertxVersion
 }
 
