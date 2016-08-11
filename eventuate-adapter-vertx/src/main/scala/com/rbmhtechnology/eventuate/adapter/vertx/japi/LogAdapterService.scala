@@ -16,31 +16,37 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx.japi
 
+import java.util.function.BiConsumer
+
 import com.rbmhtechnology.eventuate.DurableEvent
 import com.rbmhtechnology.eventuate.adapter.vertx._
 import io.vertx.core.eventbus.Message
-import io.vertx.core.{ Handler, Vertx }
+import io.vertx.core.{Handler, Vertx}
 
 object LogAdapterService {
 
-  import VertxEventbusInfo._
+  def create(logName: String, vertx: Vertx): LogAdapterService[Event] =
+    create(VertxEventbusEndpoint.publish(logName, Inbound), vertx)
 
-  def create(logName: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound))
+  def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService[ConfirmableEvent] =
+    create(VertxEventbusEndpoint.send(logName, Inbound, consumer), vertx)
 
-  def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound, Some(consumer)))
+  private[vertx] def create(endpoint: VertxEventbusEndpoint, vertx: Vertx): LogAdapterService[Event] =
+    new LogAdapterService[Event](vertx, endpoint, Event(_))
+
+  private[vertx] def create(endpoint: VertxEventbusSendEndpoint, vertx: Vertx) : LogAdapterService[ConfirmableEvent] =
+    new LogAdapterService[ConfirmableEvent](vertx, endpoint, m => Event.withConfirmation(m, endpoint, vertx))
 }
 
-class LogAdapterService private[eventuate] (vertx: Vertx, ebAddress: String) {
+class LogAdapterService[A <: Event] private[eventuate] (vertx: Vertx, eventbusEndpoint: VertxEventbusEndpoint, event: Message[DurableEvent] => A) {
 
-  def onEvent(handler: Handler[EventEnvelopeWithSubscription]): EventSubscription = {
-    val messageConsumer = vertx.eventBus().consumer[DurableEvent](ebAddress)
+  def onEvent(handler: BiConsumer[A, EventSubscription]): EventSubscription = {
+    val messageConsumer = vertx.eventBus().consumer[DurableEvent](eventbusEndpoint.address)
     val sub = EventSubscription(messageConsumer)
 
     messageConsumer.handler(new Handler[Message[DurableEvent]] {
       override def handle(m: Message[DurableEvent]): Unit =
-        handler.handle(EventEnvelope(m, sub))
+        handler.accept(event(m), sub)
     })
     sub
   }

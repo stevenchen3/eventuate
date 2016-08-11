@@ -17,26 +17,30 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import com.rbmhtechnology.eventuate.DurableEvent
+import io.vertx.core.Vertx
 import io.vertx.core.eventbus.{ Message, MessageConsumer }
 
-case class Event(payload: Any, sequenceNr: Long)
+object Event {
+  def apply(message: Message[DurableEvent]): Event =
+    new Event(message.body().localSequenceNr, message.body().payload)
 
-object EventEnvelope {
-  def apply(message: Message[DurableEvent]): EventEnvelope =
-    new EventEnvelope(message, Event(message.body().payload, message.body().localSequenceNr))
-
-  def apply(message: Message[DurableEvent], eventSubscription: EventSubscription): EventEnvelopeWithSubscription =
-    new EventEnvelopeWithSubscription(message, Event(message.body().payload, message.body().localSequenceNr), eventSubscription)
+  def withConfirmation(message: Message[DurableEvent], eventbusEndpoint: VertxEventbusSendEndpoint, vertx: Vertx): ConfirmableEvent =
+    new ConfirmableEvent(message.body().localSequenceNr, message.body().payload, eventbusEndpoint, vertx)
 }
 
-class EventEnvelope(private val message: Message[DurableEvent], val event: Event) {
+case class Event(id: Long, payload: Any)
+
+class ConfirmableEvent private[vertx] (id: Long, payload: Any, private val eventbusEndpoint: VertxEventbusSendEndpoint, private val vertx: Vertx)
+  extends Event(id, payload) {
+
   def confirm(): Unit = {
-    message.reply("OK") // TODO
+    vertx.eventBus().send(eventbusEndpoint.confirmationEndpoint.address, id)
   }
 }
 
-class EventEnvelopeWithSubscription(message: Message[DurableEvent], event: Event, val subscription: EventSubscription)
-  extends EventEnvelope(message, event) {
+object ConfirmableEvent {
+  def unapply(arg: ConfirmableEvent): Option[(Long, Any)] =
+    Some(arg.id, arg.payload)
 }
 
 object EventSubscription {

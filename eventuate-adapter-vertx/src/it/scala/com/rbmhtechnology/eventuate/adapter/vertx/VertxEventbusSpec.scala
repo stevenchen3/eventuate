@@ -23,10 +23,13 @@ import com.rbmhtechnology.eventuate.adapter.vertx.LogAdapterService.EventHandler
 import io.vertx.core.Vertx
 import org.scalatest.{BeforeAndAfterEach, Suite}
 
+import scala.concurrent.duration.Duration
+
 trait VertxEventbusSpec extends BeforeAndAfterEach {
   this: TestKit with Suite =>
 
-  val eventBusAddress = "eb-address"
+  val eventbusPublishEndpoint = VertxEventbusPublishEndpoint("eb-address")
+  val eventbusSendEndpoint = VertxEventbusSendEndpoint("eb-address:consumer1")
 
   var vertx: Vertx = _
   var ebProbe: TestProbe = _
@@ -41,10 +44,39 @@ trait VertxEventbusSpec extends BeforeAndAfterEach {
   def registerCodec(): Unit =
     vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
 
-  def ebHandler: EventHandler =
-    em => ebProbe.ref.tell(em.event, ActorRef.noSender)
+  def eventLogService(eventbusEndpoint: VertxEventbusEndpoint, handler: EventHandler[Event]): LogAdapterService[Event] = {
+    val service = LogAdapterService(eventbusEndpoint, vertx)
+    service.onEvent(handler)
+    service
+  }
 
-  implicit class DurableEventConverter(durableEvent: DurableEvent) {
-    def toEvent: Event = Event(durableEvent.payload, durableEvent.localSequenceNr)
+  def confirmableEventLogService(eventbusEndpoint: VertxEventbusSendEndpoint, handler: EventHandler[ConfirmableEvent]): LogAdapterService[ConfirmableEvent] = {
+    val service = LogAdapterService(eventbusEndpoint, vertx)
+    service.onEvent(handler)
+    service
+  }
+
+  def eventHandler: EventHandler[Event] =
+    (ev, sub) => ebProbe.ref.tell(ev, ActorRef.noSender)
+
+  def confirmableEventHandler: EventHandler[ConfirmableEvent] =
+    (ev, sub) => ebProbe.ref.tell(ev, ActorRef.noSender)
+
+  implicit class DurableEventConverter(ev: DurableEvent) {
+    def toEvent: Event = new Event(ev.localSequenceNr, ev.payload)
+  }
+
+  implicit class RichTestProbe(probe: TestProbe) {
+    def expectEvent(sequenceNr: Long, max: Duration = Duration.Undefined): Event = {
+      probe.expectMsgPF[Event](max, hint = s"Event($sequenceNr, _)") {
+        case e@Event(id, payload) if id == sequenceNr => e
+      }
+    }
+
+    def expectConfirmableEvent(sequenceNr: Long, max: Duration = Duration.Undefined): ConfirmableEvent = {
+      probe.expectMsgPF[ConfirmableEvent](max, hint = s"Event($sequenceNr, _)") {
+        case e@ConfirmableEvent(id, payload) if id == sequenceNr => e
+      }
+    }
   }
 }

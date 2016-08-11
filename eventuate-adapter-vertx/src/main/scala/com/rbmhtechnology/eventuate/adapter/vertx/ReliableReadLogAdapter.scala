@@ -17,47 +17,93 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, Props }
-import com.rbmhtechnology.eventuate.EventsourcedWriter
-import io.vertx.core.Vertx
+import com.rbmhtechnology.eventuate.DurableEvent
+import io.vertx.core.eventbus.Message
+import io.vertx.core.{ Vertx, Handler => VertxHandler }
 
-import scala.concurrent.Future
+import scala.collection.immutable.SortedMap
+import scala.concurrent.duration._
+import scala.concurrent.{ ExecutionContext, Future }
 
 private[vertx] object ReliableReadLogAdapter {
-  def props(id: String, eventLog: ActorRef, consumer: String, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new ReliableReadLogAdapter(id, eventLog, consumer, vertx, storageProvider))
+
+  sealed trait ConfirmationStatus
+  case object Unconfirmed extends ConfirmationStatus
+  case object Confirmed extends ConfirmationStatus
+  case class DeliveryAttempt(event: DurableEvent, status: ConfirmationStatus)
+
+  case class Confirm(sequenceNr: Long)
+  case object Redeliver
+
+  case class WriteSuccess(sequenceNr: Long)
+  case class WriteFailure(failure: Throwable)
+
+  def props(id: String, eventLog: ActorRef, eventbusEndpoint: VertxEventbusSendEndpoint, vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration): Props =
+    Props(new ReliableReadLogAdapter(id, eventLog, eventbusEndpoint, vertx, storageProvider, deliveryDelay))
 }
 
-private[vertx] class ReliableReadLogAdapter(val id: String, val eventLog: ActorRef, consumer: String, vertx: Vertx, storageProvider: StorageProvider)
-  extends EventsourcedWriter[Long, Long] {
+private[vertx] class ReliableReadLogAdapter(val id: String, val eventLog: ActorRef, val eventbusEndpoint: VertxEventbusSendEndpoint, val vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration)
+  extends ReadLogAdapter[Long, Long] with MessageSender with UnboundDelivery {
 
-  /**
-   * Event handler.
-   */
-  override def onEvent: Receive = {
-    case event => lastHandledEvent
+  import ReliableReadLogAdapter._
+  import context.dispatcher
+
+  var deliveryAttempts: SortedMap[Long, DeliveryAttempt] = SortedMap.empty
+  var redeliverFuture: Future[Unit] = Future.successful(Unit)
+
+  val messageConsumer = vertx.eventBus().localConsumer[Long](eventbusEndpoint.confirmationEndpoint.address, new VertxHandler[Message[Long]] {
+    override def handle(event: Message[Long]): Unit = {
+      self ! Confirm(event.body())
+    }
+  })
+
+  override def onCommand: Receive = {
+    case Confirm(sequenceNr) if deliveryAttempts.get(sequenceNr).exists(_.status == Unconfirmed) =>
+      val updated = confirm(sequenceNr)
+
+      if (updated.size != deliveryAttempts.size) {
+        storageProvider.writeProgress(id, updated.headOption.map(_._1 - 1).getOrElse(deliveryAttempts.last._1))
+          .onFailure {
+            case err => self ! WriteFailure(err)
+          }
+      }
+      deliveryAttempts = updated
+
+    case WriteFailure(err) =>
+      writeFailure(err)
+
+    case Redeliver =>
+      redeliverFuture = deliver(deliveryAttempts.values.filter(_.status == Unconfirmed).map(_.event).toVector)
+      redeliverFuture.onComplete(_ => scheduleRedelivery())
   }
 
-  /**
-   * Command handler.
-   */
-  override def onCommand: Receive = ???
+  override def onDurableEvent(lastHandledEvent: DurableEvent): Unit = {
+    deliveryAttempts = deliveryAttempts + (lastHandledEvent.localSequenceNr -> DeliveryAttempt(lastHandledEvent, Unconfirmed))
+  }
 
-  /**
-   * Asynchronously writes an incremental update to the target database. Incremental updates are prepared
-   * during event processing by a concrete `onEvent` handler.
-   *
-   * During event replay, this method is called latest after having replayed `eventuate.log.replay-batch-size`
-   * events and immediately after replay completes. During live processing, `write` is called immediately if
-   * no write operation is in progress and an event has been handled by `onEvent`. If a write operation is in
-   * progress, further event handling may run concurrently to that operation. If events are handled while a
-   * write operation is in progress, another write will follow immediately after the previous write operation
-   * completes.
-   */
-  override def write(): Future[Long] = ???
+  override def writeProgress(id: String, snr: Long)(implicit executionContext: ExecutionContext): Future[Long] =
+    redeliverFuture.map(_ => snr)
 
-  /**
-   * Asynchronously reads an initial value from the target database, usually to obtain information about
-   * event processing progress. This method is called during initialization.
-   */
-  override def read(): Future[Long] = ???
+  override def readProgress(id: String)(implicit executionContext: ExecutionContext): Future[Long] =
+    storageProvider.readProgress(id)
+
+  override def progress(result: Long): Long =
+    result
+
+  override def preStart(): Unit = {
+    super.preStart()
+    scheduleRedelivery()
+  }
+
+  override def postStop(): Unit = {
+    super.postStop()
+    messageConsumer.unregister()
+  }
+
+  private def confirm(sequenceNr: Long): SortedMap[Long, DeliveryAttempt] =
+    deliveryAttempts + (sequenceNr -> DeliveryAttempt(null, Confirmed)) dropWhile { case (_, attempt) => attempt.status == Confirmed }
+
+  private def scheduleRedelivery(): Unit = {
+    context.system.scheduler.scheduleOnce(deliveryDelay, self, Redeliver)
+  }
 }

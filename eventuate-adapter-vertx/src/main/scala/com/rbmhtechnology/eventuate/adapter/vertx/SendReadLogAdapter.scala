@@ -20,16 +20,16 @@ import akka.actor.{ ActorRef, Props }
 import io.vertx.core.Vertx
 
 private[eventuate] object SendReadLogAdapter {
-  def props(id: String, eventLog: ActorRef, ebAddress: String, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new SendReadLogAdapter(id, eventLog, ebAddress, vertx, storageProvider))
+  def props(id: String, eventLog: ActorRef, eventbusEndpoint: VertxEventbusEndpoint, vertx: Vertx, storageProvider: StorageProvider): Props =
+    Props(new SendReadLogAdapter(id, eventLog, eventbusEndpoint, vertx, storageProvider))
       .withDispatcher("eventuate.log.dispatchers.write-dispatcher")
 }
 
-private[eventuate] class SendReadLogAdapter(val id: String, val eventLog: ActorRef, val ebAddress: String, val vertx: Vertx, val storageProvider: StorageProvider)
-  extends ReadLogAdapter with UnboundDelivery with MessageSender {
+private[eventuate] class SendReadLogAdapter(val id: String, val eventLog: ActorRef, val eventbusEndpoint: VertxEventbusEndpoint, val vertx: Vertx, val storageProvider: StorageProvider)
+  extends ReadLogAdapter[Long, Long] with UnboundDelivery with MessageSender with SequenceNumberProgressStore {
 }
 
-private[eventuate] class ReactiveSendReadLogAdapter(val id: String, val eventLog: ActorRef, val ebAddress: String, val vertx: Vertx, val storageProvider: StorageProvider,
+private[eventuate] class ReactiveSendReadLogAdapter(val id: String, val eventLog: ActorRef, val eventbusEndpoint: VertxEventbusEndpoint, val vertx: Vertx, val storageProvider: StorageProvider,
   val backpressureOptions: BackpressureOptions)
-  extends ReadLogAdapter with ReactiveDelivery with MessageSender {
+  extends ReadLogAdapter[Long, Long] with ReactiveDelivery with MessageSender with SequenceNumberProgressStore {
 }

@@ -18,10 +18,7 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit._
-import com.rbmhtechnology.eventuate.adapter.vertx.LogAdapterService.EventHandler
-import com.rbmhtechnology.eventuate.log.EventLogWriter
-import com.rbmhtechnology.eventuate.utilities._
-import com.rbmhtechnology.eventuate.{DurableEvent, SingleLocationSpecLeveldb}
+import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
 import com.typesafe.config.ConfigFactory
 import org.scalatest._
 
@@ -37,7 +34,7 @@ object PublishReadLogAdapterSpec {
 }
 
 class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage {
+  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter {
 
   val inboundLogId = "log_inbound"
 
@@ -45,21 +42,12 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
     super.beforeEach()
 
     registerCodec()
-    inboundLogService(eventBusAddress, ebHandler)
-    inboundLogAdapter(eventBusAddress)
+    eventLogService(eventbusPublishEndpoint, eventHandler)
+    logAdapter(eventbusPublishEndpoint)
   }
 
-  def inboundLogService(ebAddress: String, handler: EventHandler): LogAdapterService = {
-    val service = new LogAdapterService(vertx, ebAddress)
-    service.onEvent(handler)
-    service
-  }
-
-  def inboundLogAdapter(ebAddress: String): ActorRef =
-    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, ebAddress, vertx, actorStorageProvider()))
-
-  def writeEvents(prefix: String, eventCount: Int = 100): Seq[DurableEvent] =
-    new EventLogWriter("w1", log).write((1 to eventCount).map(i => s"$prefix-$i")).await
+  def logAdapter(vertxEventbusEndpoint: VertxEventbusEndpoint): ActorRef =
+    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, vertxEventbusEndpoint, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 

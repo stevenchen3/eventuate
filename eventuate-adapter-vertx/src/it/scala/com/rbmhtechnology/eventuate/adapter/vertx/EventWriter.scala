@@ -16,15 +16,17 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-object VertxEventbusInfo {
-  private val EventbusPrefix = "com.rbmhtechnology.eventuate.adapter.vertx"
+import akka.actor.{ActorRef, ActorSystem}
+import com.rbmhtechnology.eventuate.DurableEvent
+import com.rbmhtechnology.eventuate.log.EventLogWriter
+import com.rbmhtechnology.eventuate.utilities._
 
-  def eventbusAddress(logName: String, logType: LogAdapterType, consumer: Option[String] = None): String =
-    s"$EventbusPrefix:$logName${consumerAddress(consumer, ":")}:${logType.name}"
+import scala.collection.immutable.Seq
 
-  def logId(logName: String, logType: LogAdapterType, consumer: Option[String] = None): String =
-    s"$logName${consumerAddress(consumer, "_")}_${logType.name}"
+trait EventWriter {
 
-  private def consumerAddress(consumer: Option[String], delimiter: String): String =
-    consumer.map(c => s"$delimiter$c").getOrElse("")
+  def log: ActorRef
+
+  def writeEvents(prefix: String, eventCount: Int = 100, start: Int = 1)(implicit system: ActorSystem): Seq[DurableEvent] =
+    new EventLogWriter("w1", log).write((start to eventCount).map(i => s"$prefix-$i")).await
 }

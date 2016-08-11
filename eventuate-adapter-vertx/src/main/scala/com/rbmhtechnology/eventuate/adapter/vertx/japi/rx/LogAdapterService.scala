@@ -17,31 +17,32 @@
 package com.rbmhtechnology.eventuate.adapter.vertx.japi.rx
 
 import com.rbmhtechnology.eventuate.DurableEvent
-import com.rbmhtechnology.eventuate.adapter.vertx.{ EventEnvelope, Inbound }
-import io.vertx.rxjava.core.Vertx
-import io.vertx.rxjava.core.eventbus.{ Message => RxMessage }
+import com.rbmhtechnology.eventuate.adapter.vertx._
 import io.vertx.core.eventbus.Message
+import io.vertx.core.{Vertx => CoreVertx}
+import io.vertx.rxjava.core.Vertx
+import io.vertx.rxjava.core.eventbus.{Message => RxMessage}
 import rx.Observable
 import rx.functions.Func1
-import com.rbmhtechnology.eventuate.adapter.vertx.VertxEventbusInfo
 
 object LogAdapterService {
-  import VertxEventbusInfo._
 
-  def create(logName: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound))
+  def create(logName: String, vertx: Vertx): LogAdapterService[Event] =
+    new LogAdapterService[Event](vertx, VertxEventbusEndpoint.publish(logName, Inbound), Event(_))
 
-  def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound, Some(consumer)))
+  def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService[ConfirmableEvent] = {
+    val endpoint = VertxEventbusEndpoint.send(logName, Inbound, consumer)
+    new LogAdapterService[ConfirmableEvent](vertx, endpoint, m => Event.withConfirmation(m, endpoint, vertx.getDelegate.asInstanceOf[CoreVertx]))
+  }
 }
 
-class LogAdapterService private[eventuate] (vertx: Vertx, ebAddress: String) {
+class LogAdapterService[A <: Event] private[eventuate] (vertx: Vertx, eventbusEndpoint: VertxEventbusEndpoint, event: Message[DurableEvent] => A) {
 
-  def onEvent(): Observable[EventEnvelope] = {
-    vertx.eventBus().consumer[DurableEvent](ebAddress)
+  def onEvent(): Observable[A] = {
+    vertx.eventBus().consumer[DurableEvent](eventbusEndpoint.address)
       .toObservable
-      .map(new Func1[RxMessage[DurableEvent], EventEnvelope] {
-        override def call(m: RxMessage[DurableEvent]): EventEnvelope = EventEnvelope(m.getDelegate.asInstanceOf[Message[DurableEvent]])
+      .map(new Func1[RxMessage[DurableEvent], A] {
+        override def call(m: RxMessage[DurableEvent]): A = event(m.getDelegate.asInstanceOf[Message[DurableEvent]])
       })
   }
 }

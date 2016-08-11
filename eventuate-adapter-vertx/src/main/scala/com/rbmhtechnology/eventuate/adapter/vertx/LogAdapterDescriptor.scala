@@ -16,6 +16,8 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
+import scala.concurrent.duration.FiniteDuration
+
 sealed trait LogAdapterType {
   def name: String
 }
@@ -38,5 +40,5 @@ sealed trait OutboundLogAdapterDescriptor extends LogAdapterDescriptor {
 
 case class PublishReadLogAdapterDescriptor(name: String) extends InboundLogAdapterDescriptor
 case class SendReadLogAdapterDescriptor(name: String, consumer: String, backPressure: Option[BackpressureOptions]) extends InboundLogAdapterDescriptor
-case class ReliableReadLogAdapterDescriptor(name: String, consumer: String, backPressure: Option[BackpressureOptions]) extends InboundLogAdapterDescriptor
+case class ReliableReadLogAdapterDescriptor(name: String, consumer: String, delay: FiniteDuration, backPressure: Option[BackpressureOptions]) extends InboundLogAdapterDescriptor
 case class WriteLogAdapterDescriptor(name: String) extends OutboundLogAdapterDescriptor

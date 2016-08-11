@@ -21,6 +21,7 @@ import akka.actor.Props;
 import com.rbmhtechnology.eventuate.ApplicationVersion;
 import com.rbmhtechnology.eventuate.ReplicationEndpoint;
 import com.rbmhtechnology.eventuate.adapter.vertx.AdapterConfig;
+import com.rbmhtechnology.eventuate.adapter.vertx.Event;
 import com.rbmhtechnology.eventuate.adapter.vertx.LogAdapter;
 import com.rbmhtechnology.eventuate.adapter.vertx.VertxEventbusAdapter;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.LogAdapterService;
@@ -77,11 +78,11 @@ public class VertxAdapterExample {
 
     @Override
     public void start() throws Exception {
-      final LogAdapterService service = LogAdapterService.create("logB", vertx);
+      final LogAdapterService<Event> service = LogAdapterService.create("logB", vertx);
 
       service.onEvent()
         .subscribe(ev ->
-          System.out.println(String.format("verticle received event: %s", ev.event().payload()))
+          System.out.println(String.format("verticle received event: %s", ev.payload()))
         );
     }
   }

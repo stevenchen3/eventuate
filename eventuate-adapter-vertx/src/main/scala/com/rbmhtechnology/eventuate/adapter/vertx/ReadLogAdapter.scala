@@ -24,16 +24,16 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 trait MessageProducer {
   def vertx: Vertx
-  def ebAddress: String
+  def eventbusEndpoint: VertxEventbusEndpoint
   def producer: VertxMessageProducer[DurableEvent]
 }
 
 trait MessagePublisher extends MessageProducer {
-  override lazy val producer = vertx.eventBus().publisher[DurableEvent](ebAddress)
+  override lazy val producer = vertx.eventBus().publisher[DurableEvent](eventbusEndpoint.address)
 }
 
 trait MessageSender extends MessageProducer {
-  override lazy val producer = vertx.eventBus().sender[DurableEvent](ebAddress)
+  override lazy val producer = vertx.eventBus().sender[DurableEvent](eventbusEndpoint.address)
 }
 
 trait MessageDelivery extends MessageProducer {
@@ -53,10 +53,29 @@ trait ReactiveDelivery extends MessageDelivery {
   producer.setWriteQueueMaxSize(backpressureOptions.maxItems)
 }
 
-trait ReadLogAdapter extends EventsourcedWriter[Long, Long] with MessageDelivery {
-  import context.dispatcher
+trait ProgressStore[R, W] {
+  def writeProgress(id: String, snr: Long)(implicit executionContext: ExecutionContext): Future[W]
 
+  def readProgress(id: String)(implicit executionContext: ExecutionContext): Future[R]
+
+  def progress(result: R): Long
+}
+
+trait SequenceNumberProgressStore extends ProgressStore[Long, Long] {
   def storageProvider: StorageProvider
+
+  override def writeProgress(id: String, snr: Long)(implicit executionContext: ExecutionContext): Future[Long] =
+    storageProvider.writeProgress(id, snr)
+
+  override def readProgress(id: String)(implicit executionContext: ExecutionContext): Future[Long] =
+    storageProvider.readProgress(id)
+
+  override def progress(result: Long): Long =
+    result
+}
+
+trait ReadLogAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery with ProgressStore[R, W] {
+  import context.dispatcher
 
   var events: Vector[DurableEvent] = Vector.empty
 
@@ -65,21 +84,25 @@ trait ReadLogAdapter extends EventsourcedWriter[Long, Long] with MessageDelivery
   }
 
   override def onEvent: Receive = {
-    case event => events = events :+ lastHandledEvent
+    case event =>
+      events = events :+ lastHandledEvent
+      onDurableEvent(lastHandledEvent)
   }
 
-  override def write(): Future[Long] = {
+  def onDurableEvent(lastHandledEvent: DurableEvent): Unit =
+    ()
+
+  override def write(): Future[W] = {
     val snr = lastSequenceNr
-    val ft = deliver(events).flatMap(x => storageProvider.writeProgress(id, snr))
+    val ft = deliver(events).flatMap(x => writeProgress(id, snr))
 
     events = Vector.empty
     ft
   }
 
-  override def read(): Future[Long] = {
-    storageProvider.readProgress(id)
-  }
+  override def read(): Future[R] =
+    readProgress(id)
 
-  override def readSuccess(result: Long): Option[Long] =
-    Some(result + 1L)
+  override def readSuccess(result: R): Option[Long] =
+    Some(progress(result) + 1L)
 }

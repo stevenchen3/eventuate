@@ -16,10 +16,13 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
+import java.time.Duration
+import java.util.concurrent.TimeUnit
 import java.util.{Collection => JCollection}
 
 import scala.annotation.varargs
 import scala.collection.immutable.Seq
+import scala.concurrent.duration.FiniteDuration
 
 object LogAdapter {
   def readFrom(logName: String): ReadLogAdapterConfigBuilder =
@@ -48,8 +51,8 @@ class SendLogAdapterConfig(private[eventuate] val logDescriptor: SendReadLogAdap
     new SendLogAdapterConfig(logDescriptor.copy(backPressure = Some(options)))
   }
 
-  def withConfirmedDelivery(): ReliableSendLogAdapterConfig = {
-    new ReliableSendLogAdapterConfig(ReliableReadLogAdapterDescriptor(logDescriptor.name, logDescriptor.consumer, logDescriptor.backPressure))
+  def withConfirmedDelivery(redeliverDelay: Duration): ReliableSendLogAdapterConfig = {
+    new ReliableSendLogAdapterConfig(ReliableReadLogAdapterDescriptor(logDescriptor.name, logDescriptor.consumer, FiniteDuration(redeliverDelay.toNanos, TimeUnit.NANOSECONDS), logDescriptor.backPressure))
   }
 }
 

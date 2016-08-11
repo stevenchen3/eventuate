@@ -16,29 +16,34 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ LogAdapterService => JLogAdapterService }
-import io.vertx.core.{ Handler, Vertx }
+import java.util.function.BiConsumer
+
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.{LogAdapterService => JLogAdapterService}
+import io.vertx.core.Vertx
 
 object LogAdapterService {
-  import VertxEventbusInfo._
+  type EventHandler[A <: Event] = (A, EventSubscription) => Unit
 
-  type EventHandler = EventEnvelopeWithSubscription => Unit
+  def apply(logName: String, vertx: Vertx): LogAdapterService[Event] =
+    new LogAdapterService[Event](JLogAdapterService.create(logName, vertx))
 
-  def apply(logName: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound))
+  def apply(logName: String, consumer: String, vertx: Vertx): LogAdapterService[ConfirmableEvent] =
+    new LogAdapterService[ConfirmableEvent](JLogAdapterService.create(logName, consumer, vertx))
 
-  def apply(logName: String, consumer: String, vertx: Vertx): LogAdapterService =
-    new LogAdapterService(vertx, eventbusAddress(logName, Inbound, Some(consumer)))
+  private[vertx] def apply(endpoint: VertxEventbusEndpoint, vertx: Vertx): LogAdapterService[Event] =
+    new LogAdapterService[Event](JLogAdapterService.create(endpoint, vertx))
+
+  private[vertx] def apply(endpoint: VertxEventbusSendEndpoint, vertx: Vertx) : LogAdapterService[ConfirmableEvent] =
+    new LogAdapterService[ConfirmableEvent](JLogAdapterService.create(endpoint, vertx))
 }
 
-class LogAdapterService private[eventuate] (vertx: Vertx, ebAddress: String) {
+class LogAdapterService[A <: Event] private[eventuate](delegate: JLogAdapterService[A]) {
+
   import LogAdapterService._
 
-  private val delegate = new JLogAdapterService(vertx, ebAddress)
-
-  def onEvent(handler: EventHandler): EventSubscription = {
-    delegate.onEvent(new Handler[EventEnvelopeWithSubscription] {
-      override def handle(event: EventEnvelopeWithSubscription): Unit = handler.apply(event)
+  def onEvent(handler: EventHandler[A]): EventSubscription = {
+    delegate.onEvent(new BiConsumer[A, EventSubscription] {
+      override def accept(event: A, sub: EventSubscription): Unit = handler.apply(event, sub)
     })
   }
 }

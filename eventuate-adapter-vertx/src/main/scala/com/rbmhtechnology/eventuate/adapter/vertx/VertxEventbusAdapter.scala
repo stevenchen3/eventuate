@@ -45,11 +45,17 @@ object VertxEventbusAdapter {
     storageProvider: RxStorageProvider,
     system: ActorSystem): VertxEventbusAdapter =
     new VertxEventbusAdapter(adapterConfig, replicationEndpoint, vertx, storageProvider.asScala)(system)
+
+  private[vertx] def logId(logName: String, logType: LogAdapterType, consumer: Option[String] = None): String =
+    s"$logName${consumerAddress(consumer, "_")}_${logType.name}"
+
+  private def consumerAddress(consumer: Option[String], delimiter: String): String =
+    consumer.map(c => s"$delimiter$c").getOrElse("")
 }
 
 class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: ReplicationEndpoint, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem) {
 
-  import VertxEventbusInfo._
+  import VertxEventbusAdapter._
 
   private def registerCodec(): Unit =
     vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
@@ -66,17 +72,17 @@ class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: Re
 
     logs.map {
       case l @ PublishReadLogAdapterDescriptor(n) =>
-        log(n).map(PublishReadLogAdapter.props(logId(n, l.logType), _, eventbusAddress(n, l.logType), vertx, storageProvider)).get
+        log(n).map(PublishReadLogAdapter.props(logId(n, l.logType), _, VertxEventbusEndpoint.publish(n, l.logType), vertx, storageProvider)).get
 
       case l @ SendReadLogAdapterDescriptor(n, c, None) =>
-        log(n).map(SendReadLogAdapter.props(logId(n, l.logType, Some(c)), _, eventbusAddress(n, l.logType), vertx, storageProvider)).get
+        log(n).map(SendReadLogAdapter.props(logId(n, l.logType, Some(c)), _, VertxEventbusEndpoint.send(n, l.logType, c), vertx, storageProvider)).get
 
       case l @ SendReadLogAdapterDescriptor(n, c, Some(b)) => ???
 
-      case l @ ReliableReadLogAdapterDescriptor(n, c, None) =>
-        log(n).map(ReliableReadLogAdapter.props(logId(n, l.logType, Some(c)), _, c, vertx, storageProvider)).get
+      case l @ ReliableReadLogAdapterDescriptor(n, c, d, None) =>
+        log(n).map(ReliableReadLogAdapter.props(logId(n, l.logType, Some(c)), _, VertxEventbusEndpoint.send(n, l.logType, c), vertx, storageProvider, d)).get
 
-      case l @ ReliableReadLogAdapterDescriptor(n, c, Some(b)) => ???
+      case l @ ReliableReadLogAdapterDescriptor(n, c, d, Some(b)) => ???
 
       case l @ WriteLogAdapterDescriptor(name) =>
         log(name).map(WriteLogAdapter.props(logId(name, l.logType), _, vertx)).get

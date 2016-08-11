@@ -61,7 +61,7 @@ class TestVerticle extends AbstractVerticle {
   override def start(): Unit = {
     val service = LogAdapterService.apply("logA", vertx)
 
-    service.onEvent(ev => println(s"verticle received event: ${ev.event.payload}"))
+    service.onEvent((ev, sub) => println(s"verticle received event: ${ev.payload}"))
   }
 }
 
