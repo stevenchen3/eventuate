@@ -34,12 +34,12 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
     super.beforeEach()
 
     registerCodec()
-    confirmableEventLogService(eventbusSendEndpoint, confirmableEventHandler)
-    logAdapter(eventbusSendEndpoint)
+    confirmableEventLogService(sendAdapterInfo, confirmableEventHandler)
+    logAdapter(sendAdapterInfo)
   }
 
-  def logAdapter(vertxEventbusEndpoint: VertxEventbusSendEndpoint): ActorRef =
-    system.actorOf(ReliableReadLogAdapter.props(inboundLogId, log, vertxEventbusEndpoint, vertx, actorStorageProvider(), redeliverDelay))
+  def logAdapter(logAdapterInfo: SendLogAdapterInfo): ActorRef =
+    system.actorOf(ReliableReadLogAdapter.props(inboundLogId, log, logAdapterInfo, vertx, actorStorageProvider(), redeliverDelay))
 
   def read: String = read(inboundLogId)
 

@@ -26,23 +26,32 @@ import rx.Observable
 import rx.functions.Func1
 
 object LogAdapterService {
+  import scala.language.implicitConversions
 
   def create(logName: String, vertx: Vertx): LogAdapterService[Event] =
-    new LogAdapterService[Event](vertx, VertxEventbusEndpoint.publish(logName, Inbound), Event(_))
+    new LogAdapterService[Event](vertx, LogAdapterInfo.publishAdapter(logName), Event(_))
 
   def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService[ConfirmableEvent] = {
-    val endpoint = VertxEventbusEndpoint.send(logName, Inbound, consumer)
-    new LogAdapterService[ConfirmableEvent](vertx, endpoint, m => Event.withConfirmation(m, endpoint, vertx.getDelegate.asInstanceOf[CoreVertx]))
+    val logAdapterInfo = LogAdapterInfo.sendAdapter(logName, consumer)
+    new LogAdapterService[ConfirmableEvent](vertx, logAdapterInfo, m => Event.withConfirmation(m, logAdapterInfo, vertx.getDelegate.asInstanceOf[CoreVertx]))
+  }
+
+  implicit def function1ToRxFunc1[A, B](fn: A => B): Func1[A, B] = new Func1[A, B] {
+    override def call(a: A): B = fn(a)
   }
 }
 
-class LogAdapterService[A <: Event] private[eventuate] (vertx: Vertx, eventbusEndpoint: VertxEventbusEndpoint, event: Message[DurableEvent] => A) {
+class LogAdapterService[A <: Event] private[eventuate] (vertx: Vertx, logAdapterInfo: LogAdapterInfo, event: Message[DurableEvent] => A) {
+  import LogAdapterService._
 
   def onEvent(): Observable[A] = {
-    vertx.eventBus().consumer[DurableEvent](eventbusEndpoint.address)
+    vertx.eventBus().consumer[DurableEvent](logAdapterInfo.readAddress)
       .toObservable
-      .map(new Func1[RxMessage[DurableEvent], A] {
-        override def call(m: RxMessage[DurableEvent]): A = event(m.getDelegate.asInstanceOf[Message[DurableEvent]])
-      })
+      .map((m: RxMessage[DurableEvent]) => event(m.getDelegate.asInstanceOf[Message[DurableEvent]]))
+  }
+
+  def persist[E](event: E): Observable[E] = {
+    vertx.eventBus().sendObservable[E](logAdapterInfo.writeAddress, event)
+      .map((m: RxMessage[E]) => m.body())
   }
 }

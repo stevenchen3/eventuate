@@ -31,17 +31,17 @@ private[vertx] object ReliableReadLogAdapterWithConfirmedDelivery {
 
   case class DeliveryConfirmed()
 
-  def props(id: String, eventLog: ActorRef, eventbusEndpoint: VertxEventbusSendEndpoint, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
-    Props(new ReliableReadLogAdapterWithConfirmedDelivery(id, eventLog, eventbusEndpoint, vertx, deliveryDelay))
+  def props(id: String, eventLog: ActorRef, logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
+    Props(new ReliableReadLogAdapterWithConfirmedDelivery(id, eventLog, logAdapterInfo, vertx, deliveryDelay))
 }
 
-private[vertx] class ReliableReadLogAdapterWithConfirmedDelivery(val id: String, val eventLog: ActorRef, val eventbusEndpoint: VertxEventbusSendEndpoint, val vertx: Vertx, deliveryDelay: FiniteDuration)
+private[vertx] class ReliableReadLogAdapterWithConfirmedDelivery(val id: String, val eventLog: ActorRef, val logAdapterInfo: SendLogAdapterInfo, val vertx: Vertx, deliveryDelay: FiniteDuration)
   extends EventsourcedActor with MessageSender with ConfirmedDelivery {
 
   import ReliableReadLogAdapterWithConfirmedDelivery._
   import context.dispatcher
 
-  val messageConsumer = vertx.eventBus().localConsumer[Long](eventbusEndpoint.confirmationEndpoint.address, new VertxHandler[Message[Long]] {
+  val messageConsumer = vertx.eventBus().localConsumer[Long](logAdapterInfo.readConfirmationAddress, new VertxHandler[Message[Long]] {
     override def handle(event: Message[Long]): Unit = {
       self ! Confirm(event.body().toString)
     }

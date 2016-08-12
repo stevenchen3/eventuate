@@ -42,12 +42,12 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
     super.beforeEach()
 
     registerCodec()
-    eventLogService(eventbusPublishEndpoint, eventHandler)
-    logAdapter(eventbusPublishEndpoint)
+    eventLogService(publishAdapterInfo, eventHandler)
+    logAdapter(publishAdapterInfo)
   }
 
-  def logAdapter(vertxEventbusEndpoint: VertxEventbusEndpoint): ActorRef =
-    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, vertxEventbusEndpoint, vertx, actorStorageProvider()))
+  def logAdapter(logAdapterInfo: LogAdapterInfo): ActorRef =
+    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, logAdapterInfo, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 

@@ -24,17 +24,17 @@ object Event {
   def apply(message: Message[DurableEvent]): Event =
     new Event(message.body().localSequenceNr, message.body().payload)
 
-  def withConfirmation(message: Message[DurableEvent], eventbusEndpoint: VertxEventbusSendEndpoint, vertx: Vertx): ConfirmableEvent =
-    new ConfirmableEvent(message.body().localSequenceNr, message.body().payload, eventbusEndpoint, vertx)
+  def withConfirmation(message: Message[DurableEvent], logAdapterInfo: SendLogAdapterInfo, vertx: Vertx): ConfirmableEvent =
+    new ConfirmableEvent(message.body().localSequenceNr, message.body().payload, logAdapterInfo, vertx)
 }
 
 case class Event(id: Long, payload: Any)
 
-class ConfirmableEvent private[vertx] (id: Long, payload: Any, private val eventbusEndpoint: VertxEventbusSendEndpoint, private val vertx: Vertx)
+class ConfirmableEvent private[vertx] (id: Long, payload: Any, private val logAdapterInfo: SendLogAdapterInfo, private val vertx: Vertx)
   extends Event(id, payload) {
 
   def confirm(): Unit = {
-    vertx.eventBus().send(eventbusEndpoint.confirmationEndpoint.address, id)
+    vertx.eventBus().send(logAdapterInfo.readConfirmationAddress, id)
   }
 }
 

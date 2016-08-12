@@ -33,12 +33,12 @@ class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSyste
     super.beforeEach()
 
     registerCodec()
-    confirmableEventLogService(eventbusSendEndpoint, confirmableEventHandler)
-    logAdapter(eventbusSendEndpoint)
+    confirmableEventLogService(sendAdapterInfo, confirmableEventHandler)
+    logAdapter(sendAdapterInfo)
   }
 
-  def logAdapter(vertxEventbusEndpoint: VertxEventbusSendEndpoint): ActorRef =
-    system.actorOf(ReliableReadLogAdapterWithConfirmedDelivery.props(inboundLogId, log, vertxEventbusEndpoint, vertx, redeliverDelay))
+  def logAdapter(logAdapterInfo: SendLogAdapterInfo): ActorRef =
+    system.actorOf(ReliableReadLogAdapterWithConfirmedDelivery.props(inboundLogId, log, logAdapterInfo, vertx, redeliverDelay))
 
   "A ReliableReadLogAdapterWithConfirmedDelivery" when {
     "reading events from an event log" must {

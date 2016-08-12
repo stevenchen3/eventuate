@@ -17,9 +17,9 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, ActorSystem, Props }
-import com.rbmhtechnology.eventuate.{ DurableEvent, ReplicationEndpoint }
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
+import com.rbmhtechnology.eventuate.{ DurableEvent, ReplicationEndpoint }
 import io.vertx.core.Vertx
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 
@@ -68,24 +68,24 @@ class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: Re
   }
 
   private def logAdapters(logs: Seq[LogAdapterDescriptor]): Seq[Props] = {
-    def log(name: String): Option[ActorRef] = replicationEndpoint.logs.get(name)
+    def log(name: String): ActorRef = replicationEndpoint.logs(name)
 
     logs.map {
-      case l @ PublishReadLogAdapterDescriptor(n) =>
-        log(n).map(PublishReadLogAdapter.props(logId(n, l.logType), _, VertxEventbusEndpoint.publish(n, l.logType), vertx, storageProvider)).get
+      case PublishReadLogAdapterDescriptor(n) =>
+        PublishReadLogAdapter.props(logId(n, ReadLog), log(n), LogAdapterInfo.publishAdapter(n), vertx, storageProvider)
 
-      case l @ SendReadLogAdapterDescriptor(n, c, None) =>
-        log(n).map(SendReadLogAdapter.props(logId(n, l.logType, Some(c)), _, VertxEventbusEndpoint.send(n, l.logType, c), vertx, storageProvider)).get
+      case SendReadLogAdapterDescriptor(n, c, None) =>
+        SendReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider)
 
-      case l @ SendReadLogAdapterDescriptor(n, c, Some(b)) => ???
+      case SendReadLogAdapterDescriptor(n, c, Some(b)) => ???
 
-      case l @ ReliableReadLogAdapterDescriptor(n, c, d, None) =>
-        log(n).map(ReliableReadLogAdapter.props(logId(n, l.logType, Some(c)), _, VertxEventbusEndpoint.send(n, l.logType, c), vertx, storageProvider, d)).get
+      case ReliableReadLogAdapterDescriptor(n, c, d, None) =>
+        ReliableReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider, d)
 
-      case l @ ReliableReadLogAdapterDescriptor(n, c, d, Some(b)) => ???
+      case ReliableReadLogAdapterDescriptor(n, c, d, Some(b)) => ???
 
-      case l @ WriteLogAdapterDescriptor(name) =>
-        log(name).map(WriteLogAdapter.props(logId(name, l.logType), _, vertx)).get
+      case WriteLogAdapterDescriptor(n) =>
+        WriteLogAdapter.props(logId(n, WriteLog), log(n), LogAdapterInfo.writeAdapter(n), vertx)
     }
   }
 }

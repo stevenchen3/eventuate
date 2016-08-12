@@ -21,24 +21,14 @@ import scala.concurrent.duration.FiniteDuration
 sealed trait LogAdapterType {
   def name: String
 }
-
-case object Inbound extends LogAdapterType { val name: String = "inbound" }
-case object Outbound extends LogAdapterType { val name: String = "outbound" }
+case object ReadLog extends LogAdapterType { val name: String = "read-log" }
+case object WriteLog extends LogAdapterType { val name: String = "write-log" }
 
 sealed trait LogAdapterDescriptor {
   def name: String
-  def logType: LogAdapterType
 }
 
-sealed trait InboundLogAdapterDescriptor extends LogAdapterDescriptor {
-  override def logType: LogAdapterType = Inbound
-}
-
-sealed trait OutboundLogAdapterDescriptor extends LogAdapterDescriptor {
-  override def logType: LogAdapterType = Outbound
-}
-
-case class PublishReadLogAdapterDescriptor(name: String) extends InboundLogAdapterDescriptor
-case class SendReadLogAdapterDescriptor(name: String, consumer: String, backPressure: Option[BackpressureOptions]) extends InboundLogAdapterDescriptor
-case class ReliableReadLogAdapterDescriptor(name: String, consumer: String, delay: FiniteDuration, backPressure: Option[BackpressureOptions]) extends InboundLogAdapterDescriptor
-case class WriteLogAdapterDescriptor(name: String) extends OutboundLogAdapterDescriptor
+case class PublishReadLogAdapterDescriptor(name: String) extends LogAdapterDescriptor
+case class SendReadLogAdapterDescriptor(name: String, consumer: String, backPressure: Option[BackpressureOptions]) extends LogAdapterDescriptor
+case class ReliableReadLogAdapterDescriptor(name: String, consumer: String, redeliverDelay: FiniteDuration, backPressure: Option[BackpressureOptions]) extends LogAdapterDescriptor
+case class WriteLogAdapterDescriptor(name: String) extends LogAdapterDescriptor

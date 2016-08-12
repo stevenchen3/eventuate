@@ -18,16 +18,45 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, Props }
 import com.rbmhtechnology.eventuate.EventsourcedActor
-import io.vertx.core.Vertx
+import io.vertx.core.eventbus.Message
+import io.vertx.core.{ Vertx, Handler => VertxHandler }
+
+import scala.util.{ Failure, Success }
 
 private[vertx] object WriteLogAdapter {
-  def props(id: String, eventLog: ActorRef, vertx: Vertx): Props =
-    Props(new WriteLogAdapter(id, eventLog, vertx))
+
+  case class PersistEvent(event: Any, message: Message[Any])
+
+  def props(id: String, eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx): Props =
+    Props(new WriteLogAdapter(id, eventLog, logAdapterInfo, vertx))
 }
 
-private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, vertx: Vertx) extends EventsourcedActor {
+private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx) extends EventsourcedActor {
 
-  override def onCommand: Receive = ???
+  import WriteLogAdapter._
 
-  override def onEvent: Receive = ???
+  val messageConsumer = vertx.eventBus().localConsumer[Any](logAdapterInfo.writeAddress, new VertxHandler[Message[Any]] {
+    override def handle(message: Message[Any]): Unit = {
+      self ! PersistEvent(message.body(), message)
+    }
+  })
+
+  override def stateSync: Boolean = false
+
+  override def onCommand: Receive = {
+    case PersistEvent(evt, msg) =>
+      persist(evt) {
+        case Success(res) => msg.reply(res)
+        case Failure(err) => msg.fail(0, err.getMessage)
+      }
+  }
+
+  override def onEvent: Receive = {
+    case _ =>
+  }
+
+  override def postStop(): Unit = {
+    super.postStop()
+    messageConsumer.unregister()
+  }
 }

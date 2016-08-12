@@ -53,7 +53,7 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
       val vertxAdapter = VertxEventbusAdapter(AdapterConfig(LogAdapter.readFrom(logName).publish()), endpoint, vertx, actorStorageProvider())
       val service = LogAdapterService(logName, vertx)
       val logWriter = new EventLogWriter("w1", endpoint.logs(logName))
-      val logStorageName = VertxEventbusAdapter.logId(logName, Inbound)
+      val logStorageName = VertxEventbusAdapter.logId(logName, ReadLog)
 
       service.onEvent(eventHandler)
       vertxAdapter.activate()

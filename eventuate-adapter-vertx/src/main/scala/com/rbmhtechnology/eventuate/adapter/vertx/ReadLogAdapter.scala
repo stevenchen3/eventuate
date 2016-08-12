@@ -24,16 +24,16 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 trait MessageProducer {
   def vertx: Vertx
-  def eventbusEndpoint: VertxEventbusEndpoint
+  def logAdapterInfo: LogAdapterInfo
   def producer: VertxMessageProducer[DurableEvent]
 }
 
 trait MessagePublisher extends MessageProducer {
-  override lazy val producer = vertx.eventBus().publisher[DurableEvent](eventbusEndpoint.address)
+  override lazy val producer = vertx.eventBus().publisher[DurableEvent](logAdapterInfo.readAddress)
 }
 
 trait MessageSender extends MessageProducer {
-  override lazy val producer = vertx.eventBus().sender[DurableEvent](eventbusEndpoint.address)
+  override lazy val producer = vertx.eventBus().sender[DurableEvent](logAdapterInfo.readAddress)
 }
 
 trait MessageDelivery extends MessageProducer {

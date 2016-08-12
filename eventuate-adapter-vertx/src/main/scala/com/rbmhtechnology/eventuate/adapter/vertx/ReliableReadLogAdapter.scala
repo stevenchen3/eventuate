@@ -38,11 +38,11 @@ private[vertx] object ReliableReadLogAdapter {
   case class WriteSuccess(sequenceNr: Long)
   case class WriteFailure(failure: Throwable)
 
-  def props(id: String, eventLog: ActorRef, eventbusEndpoint: VertxEventbusSendEndpoint, vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration): Props =
-    Props(new ReliableReadLogAdapter(id, eventLog, eventbusEndpoint, vertx, storageProvider, deliveryDelay))
+  def props(id: String, eventLog: ActorRef, logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration): Props =
+    Props(new ReliableReadLogAdapter(id, eventLog, logAdapterInfo, vertx, storageProvider, deliveryDelay))
 }
 
-private[vertx] class ReliableReadLogAdapter(val id: String, val eventLog: ActorRef, val eventbusEndpoint: VertxEventbusSendEndpoint, val vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration)
+private[vertx] class ReliableReadLogAdapter(val id: String, val eventLog: ActorRef, val logAdapterInfo: SendLogAdapterInfo, val vertx: Vertx, storageProvider: StorageProvider, deliveryDelay: FiniteDuration)
   extends ReadLogAdapter[Long, Long] with MessageSender with UnboundDelivery {
 
   import ReliableReadLogAdapter._
@@ -51,7 +51,7 @@ private[vertx] class ReliableReadLogAdapter(val id: String, val eventLog: ActorR
   var deliveryAttempts: SortedMap[Long, DeliveryAttempt] = SortedMap.empty
   var redeliverFuture: Future[Unit] = Future.successful(Unit)
 
-  val messageConsumer = vertx.eventBus().localConsumer[Long](eventbusEndpoint.confirmationEndpoint.address, new VertxHandler[Message[Long]] {
+  val messageConsumer = vertx.eventBus().localConsumer[Long](logAdapterInfo.readConfirmationAddress, new VertxHandler[Message[Long]] {
     override def handle(event: Message[Long]): Unit = {
       self ! Confirm(event.body())
     }

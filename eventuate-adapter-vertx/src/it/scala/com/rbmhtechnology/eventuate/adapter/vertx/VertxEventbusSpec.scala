@@ -28,8 +28,8 @@ import scala.concurrent.duration.Duration
 trait VertxEventbusSpec extends BeforeAndAfterEach {
   this: TestKit with Suite =>
 
-  val eventbusPublishEndpoint = VertxEventbusPublishEndpoint("eb-address")
-  val eventbusSendEndpoint = VertxEventbusSendEndpoint("eb-address:consumer1")
+  val publishAdapterInfo = LogAdapterInfo.publishAdapter("publish-log")
+  val sendAdapterInfo = LogAdapterInfo.sendAdapter("send-log", "consumer1")
 
   var vertx: Vertx = _
   var ebProbe: TestProbe = _
@@ -44,14 +44,14 @@ trait VertxEventbusSpec extends BeforeAndAfterEach {
   def registerCodec(): Unit =
     vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
 
-  def eventLogService(eventbusEndpoint: VertxEventbusEndpoint, handler: EventHandler[Event]): LogAdapterService[Event] = {
-    val service = LogAdapterService(eventbusEndpoint, vertx)
+  def eventLogService(logAdapterInfo: LogAdapterInfo, handler: EventHandler[Event]): LogAdapterService[Event] = {
+    val service = LogAdapterService(logAdapterInfo, vertx)
     service.onEvent(handler)
     service
   }
 
-  def confirmableEventLogService(eventbusEndpoint: VertxEventbusSendEndpoint, handler: EventHandler[ConfirmableEvent]): LogAdapterService[ConfirmableEvent] = {
-    val service = LogAdapterService(eventbusEndpoint, vertx)
+  def confirmableEventLogService(logAdapterInfo: SendLogAdapterInfo, handler: EventHandler[ConfirmableEvent]): LogAdapterService[ConfirmableEvent] = {
+    val service = LogAdapterService(logAdapterInfo, vertx)
     service.onEvent(handler)
     service
   }
