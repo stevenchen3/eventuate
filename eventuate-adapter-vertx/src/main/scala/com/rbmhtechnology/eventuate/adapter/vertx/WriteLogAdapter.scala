@@ -34,10 +34,20 @@ private[vertx] object WriteLogAdapter {
 private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx) extends EventsourcedActor {
 
   import WriteLogAdapter._
+  import VertxExtensions._
 
-  val messageConsumer = vertx.eventBus().localConsumer[Any](logAdapterInfo.writeAddress, new VertxHandler[Message[Any]] {
+  var messageConsumer = vertx.eventBus().localConsumer[Any](logAdapterInfo.writeAddress, new VertxHandler[Message[Any]] {
     override def handle(message: Message[Any]): Unit = {
-      self ! PersistEvent(message.body(), message)
+      message.headers().getHeaderValue(Headers.Action) match {
+        case Some(Headers.Action.Persist) =>
+          self ! PersistEvent(message.body(), message)
+        case Some(Headers.Action.Connect) =>
+          message.reply("ok")
+        case Some(action) =>
+          message.fail(0, s"Action '$action' is not supported.")
+        case _ =>
+          message.fail(0, "Header 'action' is missing.")
+      }
     }
   })
 

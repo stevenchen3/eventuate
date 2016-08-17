@@ -17,41 +17,48 @@
 package com.rbmhtechnology.eventuate.adapter.vertx.japi.rx
 
 import com.rbmhtechnology.eventuate.DurableEvent
-import com.rbmhtechnology.eventuate.adapter.vertx._
+import com.rbmhtechnology.eventuate.adapter.vertx.{LogAdapterService => BaseLogAdapterService, _}
 import io.vertx.core.eventbus.Message
-import io.vertx.core.{Vertx => CoreVertx}
-import io.vertx.rxjava.core.Vertx
+import io.vertx.rx.java.RxHelper
 import io.vertx.rxjava.core.eventbus.{Message => RxMessage}
+import io.vertx.rxjava.core.{Vertx => RxVertx}
 import rx.Observable
-import rx.functions.Func1
 
 object LogAdapterService {
-  import scala.language.implicitConversions
 
-  def create(logName: String, vertx: Vertx): LogAdapterService[Event] =
-    new LogAdapterService[Event](vertx, LogAdapterInfo.publishAdapter(logName), Event(_))
+  import VertxConverters._
 
-  def create(logName: String, consumer: String, vertx: Vertx): LogAdapterService[ConfirmableEvent] = {
-    val logAdapterInfo = LogAdapterInfo.sendAdapter(logName, consumer)
-    new LogAdapterService[ConfirmableEvent](vertx, logAdapterInfo, m => Event.withConfirmation(m, logAdapterInfo, vertx.getDelegate.asInstanceOf[CoreVertx]))
+  def create(logName: String, vertx: RxVertx): LogAdapterService[Event] =
+    new LogAdapterService[Event](vertx, BaseLogAdapterService(logName, vertx))
+
+  def create(logName: String, vertx: RxVertx, options: ServiceOptions): LogAdapterService[Event] =
+    new LogAdapterService[Event](vertx, BaseLogAdapterService(logName, vertx, options))
+
+  def create(logName: String, consumer: String, vertx: RxVertx): LogAdapterService[ConfirmableEvent] = {
+    new LogAdapterService[ConfirmableEvent](vertx, BaseLogAdapterService(logName, consumer, vertx))
   }
 
-  implicit def function1ToRxFunc1[A, B](fn: A => B): Func1[A, B] = new Func1[A, B] {
-    override def call(a: A): B = fn(a)
+  def create(logName: String, consumer: String, vertx: RxVertx, options: ServiceOptions): LogAdapterService[ConfirmableEvent] = {
+    new LogAdapterService[ConfirmableEvent](vertx, BaseLogAdapterService(logName, consumer, vertx, options))
   }
 }
 
-class LogAdapterService[A <: Event] private[eventuate] (vertx: Vertx, logAdapterInfo: LogAdapterInfo, event: Message[DurableEvent] => A) {
-  import LogAdapterService._
+class LogAdapterService[A <: Event] private[vertx](vertx: RxVertx, delegate: BaseLogAdapterService[A]) {
+
+  import RxConverters._
+  import VertxHandlerConverters._
 
   def onEvent(): Observable[A] = {
-    vertx.eventBus().consumer[DurableEvent](logAdapterInfo.readAddress)
+    vertx.eventBus().consumer[DurableEvent](delegate.logAdapterInfo.readAddress)
       .toObservable
-      .map((m: RxMessage[DurableEvent]) => event(m.getDelegate.asInstanceOf[Message[DurableEvent]]))
+      .map({ (m: RxMessage[DurableEvent]) =>
+        delegate.toEvent(m.getDelegate.asInstanceOf[Message[DurableEvent]])
+      }.asRx)
   }
 
   def persist[E](event: E): Observable[E] = {
-    vertx.eventBus().sendObservable[E](logAdapterInfo.writeAddress, event)
-      .map((m: RxMessage[E]) => m.body())
+    val observable = RxHelper.observableFuture[E]()
+    delegate.persist(event)(observable.toHandler.asEventuateHandler)
+    observable
   }
 }

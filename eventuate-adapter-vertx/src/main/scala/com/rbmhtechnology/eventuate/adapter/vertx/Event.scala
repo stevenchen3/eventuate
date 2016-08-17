@@ -40,7 +40,7 @@ class ConfirmableEvent private[vertx] (id: Long, payload: Any, private val logAd
 
 object ConfirmableEvent {
   def unapply(arg: ConfirmableEvent): Option[(Long, Any)] =
-    Some(arg.id, arg.payload)
+    Some((arg.id, arg.payload))
 }
 
 object EventSubscription {

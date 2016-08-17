@@ -24,7 +24,7 @@ import org.scalatest.{MustMatchers, WordSpecLike}
 import scala.concurrent.duration._
 
 class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with EventWriter {
+  with SingleLocationSpecLeveldb with VertxEventbusSpec with EventWriter with StopSystemAfterAll {
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"

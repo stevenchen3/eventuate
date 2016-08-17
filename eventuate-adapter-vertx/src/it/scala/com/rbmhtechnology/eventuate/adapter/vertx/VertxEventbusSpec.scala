@@ -24,12 +24,15 @@ import io.vertx.core.Vertx
 import org.scalatest.{BeforeAndAfterEach, Suite}
 
 import scala.concurrent.duration.Duration
+import scala.reflect.ClassTag
+import scala.util.Failure
 
 trait VertxEventbusSpec extends BeforeAndAfterEach {
   this: TestKit with Suite =>
 
-  val publishAdapterInfo = LogAdapterInfo.publishAdapter("publish-log")
-  val sendAdapterInfo = LogAdapterInfo.sendAdapter("send-log", "consumer1")
+  val publishAdapterInfo = LogAdapterInfo.publishAdapter("publish-log-A")
+  val sendAdapterInfo = LogAdapterInfo.sendAdapter("send-log-A", "consumer1")
+  val writeAdapterInfo = LogAdapterInfo.writeAdapter("write-log-A")
 
   var vertx: Vertx = _
   var ebProbe: TestProbe = _
@@ -44,14 +47,14 @@ trait VertxEventbusSpec extends BeforeAndAfterEach {
   def registerCodec(): Unit =
     vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
 
-  def eventLogService(logAdapterInfo: LogAdapterInfo, handler: EventHandler[Event]): LogAdapterService[Event] = {
-    val service = LogAdapterService(logAdapterInfo, vertx)
+  def eventLogService(logAdapterInfo: LogAdapterInfo, handler: EventHandler[Event], options: ServiceOptions = ServiceOptions()): LogAdapterService[Event] = {
+    val service = LogAdapterService(logAdapterInfo, vertx, options)
     service.onEvent(handler)
     service
   }
 
-  def confirmableEventLogService(logAdapterInfo: SendLogAdapterInfo, handler: EventHandler[ConfirmableEvent]): LogAdapterService[ConfirmableEvent] = {
-    val service = LogAdapterService(logAdapterInfo, vertx)
+  def confirmableEventLogService(logAdapterInfo: SendLogAdapterInfo, handler: EventHandler[ConfirmableEvent], options: ServiceOptions = ServiceOptions()): LogAdapterService[ConfirmableEvent] = {
+    val service = LogAdapterService(logAdapterInfo, vertx, options)
     service.onEvent(handler)
     service
   }
@@ -76,6 +79,12 @@ trait VertxEventbusSpec extends BeforeAndAfterEach {
     def expectConfirmableEvent(sequenceNr: Long, max: Duration = Duration.Undefined): ConfirmableEvent = {
       probe.expectMsgPF[ConfirmableEvent](max, hint = s"Event($sequenceNr, _)") {
         case e@ConfirmableEvent(id, payload) if id == sequenceNr => e
+      }
+    }
+
+    def expectFailure[T](max: Duration = Duration.Undefined)(implicit t: ClassTag[T]): T = {
+      probe.expectMsgPF[T](max, hint = s"Failure($t)") {
+        case f@Failure(err:T) => err
       }
     }
   }

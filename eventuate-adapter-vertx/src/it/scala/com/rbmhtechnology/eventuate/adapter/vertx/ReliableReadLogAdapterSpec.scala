@@ -24,7 +24,7 @@ import org.scalatest.{MustMatchers, WordSpecLike}
 import scala.concurrent.duration._
 
 class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter {
+  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter with StopSystemAfterAll {
 
   val redeliverDelay = 1.seconds
   val storageTimeout = 500.millis

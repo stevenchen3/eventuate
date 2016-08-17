@@ -16,14 +16,21 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.testkit.TestKit
-import org.scalatest.{BeforeAndAfterAll, Suite}
+import java.time.{ Duration => JDuration }
+import scala.concurrent.duration._
 
-trait StopSystemAfterAll extends BeforeAndAfterAll {
-  this: TestKit with Suite =>
+object ServiceOptions {
 
-  override def afterAll(): Unit = {
-    super.afterAll()
-    TestKit.shutdownActorSystem(system)
-  }
+  def apply(): ServiceOptions =
+    ServiceOptions(1.second, 30.seconds)
+
+  def create(): ServiceOptions =
+    apply()
+
+  def create(connectInterval: JDuration, connectTimeout: JDuration): ServiceOptions =
+    ServiceOptions(
+      Duration.fromNanos(connectInterval.toNanos),
+      Duration.fromNanos(connectTimeout.toNanos))
 }
+
+case class ServiceOptions(connectInterval: FiniteDuration, connectTimeout: FiniteDuration)

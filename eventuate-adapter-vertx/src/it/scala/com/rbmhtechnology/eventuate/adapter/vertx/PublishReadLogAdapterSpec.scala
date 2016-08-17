@@ -34,7 +34,7 @@ object PublishReadLogAdapterSpec {
 }
 
 class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter {
+  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter with StopSystemAfterAll {
 
   val inboundLogId = "log_inbound"
 
