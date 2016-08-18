@@ -43,7 +43,7 @@ object LogAdapterService {
   }
 }
 
-class LogAdapterService[A <: Event] private[vertx](vertx: RxVertx, delegate: BaseLogAdapterService[A]) {
+class LogAdapterService[A <: Event] private(vertx: RxVertx, delegate: BaseLogAdapterService[A]) {
 
   import RxConverters._
   import VertxHandlerConverters._

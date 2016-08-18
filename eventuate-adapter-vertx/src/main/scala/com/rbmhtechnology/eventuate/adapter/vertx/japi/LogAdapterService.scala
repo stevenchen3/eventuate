@@ -36,7 +36,7 @@ object LogAdapterService {
     new LogAdapterService[ConfirmableEvent](BaseLogAdapterService(logName, consumer, vertx, options))
 }
 
-class LogAdapterService[A <: Event] private[vertx](delegate: BaseLogAdapterService[A]) {
+class LogAdapterService[A <: Event] private(delegate: BaseLogAdapterService[A]) {
 
   import VertxHandlerConverters._
 

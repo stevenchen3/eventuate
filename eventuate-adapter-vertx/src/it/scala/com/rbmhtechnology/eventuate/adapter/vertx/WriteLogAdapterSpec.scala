@@ -19,17 +19,12 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.EventsourcingProtocol._
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{LogAdapterService => RxLogAdapterService}
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.{LogAdapterService => JLogAdapterService}
 import com.rbmhtechnology.eventuate.{EventsourcedView, SingleLocationSpecLeveldb}
-import io.vertx.core.{AsyncResult, Handler}
-import io.vertx.rxjava.core.{Vertx => RxVertx}
-import org.scalatest.{MustMatchers, Suite, WordSpecLike}
-import rx.functions.Action1
+import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.collection.immutable.Seq
 import scala.concurrent.duration._
-import scala.util.{Failure, Success}
+import scala.util.Success
 
 object WriteLogAdapterSpec {
 
@@ -54,99 +49,39 @@ object WriteLogAdapterSpec {
   }
 }
 
-class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WriteLogAdapterBaseSpec {
-  override def doPersist(event: Any)(handler: EventsourcedView.Handler[Any]): Unit = {
-    logService.persist(event)(handler)
-  }
-}
+class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEventbus with ActorLogAdapterService {
 
-class JavaApiWriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WriteLogAdapterBaseSpec {
-
-  var jLogService: JLogAdapterService[Event] = _
-
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-
-    jLogService = new JLogAdapterService(logService)
-  }
-
-  override def doPersist(event: Any)(handler: EventsourcedView.Handler[Any]): Unit = {
-    jLogService.persist(event, new Handler[AsyncResult[Any]] {
-      override def handle(res: AsyncResult[Any]): Unit = {
-        if (res.succeeded()) {
-          handler(Success(res.result()))
-        } else {
-          handler(Failure(res.cause()))
-        }
-      }
-    })
-  }
-}
-
-class JavaRxApiWriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WriteLogAdapterBaseSpec {
-
-  var rxLogService: RxLogAdapterService[Event] = _
-
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-
-    rxLogService = new RxLogAdapterService(RxVertx.newInstance(vertx), logService)
-  }
-
-  override def doPersist(event: Any)(handler: EventsourcedView.Handler[Any]): Unit = {
-    rxLogService.persist(event)
-      .subscribe(
-        new Action1[Any] {
-          override def call(res: Any): Unit = handler(Success(res))
-        },
-        new Action1[Throwable] {
-          override def call(err: Throwable): Unit = handler(Failure(err))
-        }
-      )
-  }
-}
-
-trait WriteLogAdapterBaseSpec extends WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with VertxEventbusSpec with StopSystemAfterAll {
-  this: TestKit with Suite =>
-
+  import TestExtensions._
   import WriteLogAdapterSpec._
 
   var resultProbe: TestProbe = _
   var logProbe: TestProbe = _
   var logService: LogAdapterService[Event] = _
+  var persist: (Any) => Unit = _
 
   val serviceOptions = ServiceOptions(connectInterval = 500.millis, connectTimeout = 3.seconds)
-
-  def doPersist(event: Any)(h: EventsourcedView.Handler[Any])
 
   override def beforeEach(): Unit = {
     super.beforeEach()
 
-    registerCodec()
-
     resultProbe = TestProbe()
     logProbe = TestProbe()
 
+    registerCodec()
     logReader(logProbe.ref)
-    logService = eventLogService(writeAdapterInfo, eventHandler, serviceOptions)
+    persist = createPersist(resultProbe.ref, logName, serviceOptions)
   }
 
   def logReader(receiver: ActorRef): ActorRef =
     system.actorOf(Props(new LogReader("r", log, receiver)))
 
   def writeLogAdapter(eventLog: ActorRef = log): ActorRef = {
-    system.actorOf(WriteLogAdapter.props("write-log-adapter", eventLog, writeAdapterInfo, vertx))
+    system.actorOf(WriteLogAdapter.props("write-log-adapter", eventLog, LogAdapterInfo.writeAdapter(logName), vertx))
   }
 
   def failingWriteLog(failureEvents: Seq[Any] = Seq()): ActorRef = {
     system.actorOf(Props(new FailingWriteLog(log, failureEvents)))
-  }
-
-  def persist(event: Any): Unit = {
-    doPersist(event) {
-      case s@Success(res) => resultProbe.ref ! s
-      case f@Failure(err) => resultProbe.ref ! f
-    }
   }
 
   "A WriteLogAdapter" when {

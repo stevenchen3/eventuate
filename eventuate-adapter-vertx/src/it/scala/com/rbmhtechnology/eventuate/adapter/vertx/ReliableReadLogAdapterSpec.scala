@@ -17,29 +17,34 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ActorRef, ActorSystem, Status}
-import akka.testkit.TestKit
+import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with ActorStorage with EventWriter with StopSystemAfterAll {
+class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
+  with ActorStorage with EventWriter with VertxEventbus with ActorLogAdapterService {
+
+  import TestExtensions._
 
   val redeliverDelay = 1.seconds
   val storageTimeout = 500.millis
   val inboundLogId = "log_inbound_confirm"
+  var serviceProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
+    serviceProbe = TestProbe()
 
     registerCodec()
-    confirmableEventLogService(sendAdapterInfo, confirmableEventHandler)
-    logAdapter(sendAdapterInfo)
+    logAdapter(logName, consumer)
+    notifyOnConfirmableEvent(serviceProbe.ref)
   }
 
-  def logAdapter(logAdapterInfo: SendLogAdapterInfo): ActorRef =
-    system.actorOf(ReliableReadLogAdapter.props(inboundLogId, log, logAdapterInfo, vertx, actorStorageProvider(), redeliverDelay))
+  def logAdapter(logName: String, consumer: String): ActorRef =
+    system.actorOf(ReliableReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, actorStorageProvider(), redeliverDelay))
 
   def read: String = read(inboundLogId)
 
@@ -53,11 +58,11 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
-        ebProbe.expectConfirmableEvent(sequenceNr = 4)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "deliver events based on the replication progress" in {
         writeEvents("ev", 5)
@@ -65,9 +70,9 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(2L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
-        ebProbe.expectConfirmableEvent(sequenceNr = 4)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "persist event confirmations if no gaps exist" in {
         writeEvents("ev", 3)
@@ -76,9 +81,9 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
 
         storageProbe.expectMsg(write(1))
       }
@@ -89,15 +94,15 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
 
         storageProbe.expectNoMsg(storageTimeout)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
 
         storageProbe.expectMsg(write(3))
         storageProbe.reply(3L)
@@ -109,9 +114,9 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        val ev1 = ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        val ev2 = ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        val ev3 = ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        val ev1 = serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        val ev2 = serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        val ev3 = serviceProbe.expectConfirmableEvent(sequenceNr = 3)
 
         ev3.confirm()
         ev2.confirm()
@@ -127,9 +132,9 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
 
         storageProbe.expectMsg(write(1))
         storageProbe.reply(1L)
@@ -148,14 +153,14 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
 
         storageProbe.expectNoMsg(storageTimeout)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
       }
       "redeliver only unconfirmed events" in {
         writeEvents("ev", 5)
@@ -163,14 +168,14 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "redeliver only unconfirmed events while processing new events" in {
         writeEvents("ev", 3)
@@ -178,18 +183,18 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
 
         writeEvents("ev", 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
     }
     "encountering a write failure" must {
@@ -199,9 +204,9 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
 
         storageProbe.expectMsg(write(1))
         storageProbe.reply(Status.Failure(new RuntimeException("err")))
@@ -209,8 +214,8 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectMsg(read)
         storageProbe.reply(1L)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
       }
     }
   }

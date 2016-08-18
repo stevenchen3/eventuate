@@ -16,8 +16,8 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.actor.ActorSystem
-import akka.testkit.TestKit
+import akka.actor.{ActorRef, ActorSystem}
+import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.log.EventLogWriter
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog
 import com.rbmhtechnology.eventuate.utilities._
@@ -36,15 +36,19 @@ object VertxEventbusAdapterSpec {
 }
 
 class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbusAdapterSpec.Config))
-  with WordSpecLike with MustMatchers with BeforeAndAfterAll with VertxEventbusSpec with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb {
+  with WordSpecLike with MustMatchers with BeforeAndAfterAll with VertxEventbus with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb {
+
+  import TestExtensions._
 
   val logName = "logA"
   var endpoint: ReplicationEndpoint = _
+  var eventBusProbe: TestProbe = _
 
   override def config: Config = VertxEventbusAdapterSpec.Config
 
   override def beforeAll(): Unit = {
     super.beforeAll()
+    eventBusProbe = TestProbe()
     endpoint = new ReplicationEndpoint(id = "1", logNames = Set(logName), logFactory = logId => LeveldbEventLog.props(logId), connections = Set())
   }
 
@@ -55,7 +59,7 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
       val logWriter = new EventLogWriter("w1", endpoint.logs(logName))
       val logStorageName = VertxEventbusAdapter.logId(logName, ReadLog)
 
-      service.onEvent(eventHandler)
+      service.onEvent((ev, sub) => eventBusProbe.ref.tell(ev, ActorRef.noSender))
       vertxAdapter.activate()
 
       val write1 = logWriter.write(Seq("event1")).await.head
@@ -66,14 +70,14 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
       storageProbe.expectMsg(write(logStorageName)(1))
       storageProbe.reply(1L)
 
-      ebProbe.expectMsgType[Event] must be(write1.toEvent)
+      eventBusProbe.expectMsgType[Event] must be(write1.toEvent)
 
       val write2 = logWriter.write(Seq("event2", "event3", "event4")).await
 
       storageProbe.expectMsg(write(logStorageName)(2))
       storageProbe.reply(2L)
 
-      ebProbe.receiveN(3).asInstanceOf[Seq[Event]] must be(write2.map(_.toEvent))
+      eventBusProbe.receiveN(3).asInstanceOf[Seq[Event]] must be(write2.map(_.toEvent))
 
       storageProbe.expectMsg(write(logStorageName)(4))
       storageProbe.reply(4L)

@@ -17,79 +17,84 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.TestKit
+import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config)) with WordSpecLike with MustMatchers
-  with SingleLocationSpecLeveldb with VertxEventbusSpec with EventWriter with StopSystemAfterAll {
+class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
+  with VertxEventbus with ActorLogAdapterService {
+
+  import TestExtensions._
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"
+  var serviceProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
+    serviceProbe = TestProbe()
 
     registerCodec()
-    confirmableEventLogService(sendAdapterInfo, confirmableEventHandler)
-    logAdapter(sendAdapterInfo)
+    logAdapter(logName, consumer)
+    notifyOnConfirmableEvent(serviceProbe.ref)
   }
 
-  def logAdapter(logAdapterInfo: SendLogAdapterInfo): ActorRef =
-    system.actorOf(ReliableReadLogAdapterWithConfirmedDelivery.props(inboundLogId, log, logAdapterInfo, vertx, redeliverDelay))
+  def logAdapter(logName: String, consumer: String): ActorRef =
+    system.actorOf(ReliableReadLogAdapterWithConfirmedDelivery.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, redeliverDelay))
 
   "A ReliableReadLogAdapterWithConfirmedDelivery" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
         writeEvents("ev", 5)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
-        ebProbe.expectConfirmableEvent(sequenceNr = 4)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "redeliver all unconfirmed events" in {
         writeEvents("ev", 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
       }
       "redeliver only unconfirmed events" in {
         writeEvents("ev", 5)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "redeliver only unconfirmed events while processing new events" in {
         writeEvents("ev", 3)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
 
         writeEvents("ev", 2)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 5).confirm()
-        ebProbe.expectConfirmableEvent(sequenceNr = 6)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 6)
 
-        ebProbe.expectConfirmableEvent(sequenceNr = 1)
-        ebProbe.expectConfirmableEvent(sequenceNr = 3)
-        ebProbe.expectConfirmableEvent(sequenceNr = 6)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 6)
       }
     }
   }

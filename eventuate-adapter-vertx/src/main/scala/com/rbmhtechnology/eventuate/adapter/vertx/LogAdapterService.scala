@@ -44,10 +44,10 @@ object LogAdapterService {
   def apply(logName: String, consumer: String, vertx: Vertx, options: ServiceOptions): LogAdapterService[ConfirmableEvent] =
     apply(LogAdapterInfo.sendAdapter(logName, consumer), vertx, options)
 
-  private[vertx] def apply(logAdapterInfo: LogAdapterInfo, vertx: Vertx, options: ServiceOptions): LogAdapterService[Event] =
+  private def apply(logAdapterInfo: LogAdapterInfo, vertx: Vertx, options: ServiceOptions): LogAdapterService[Event] =
     new LogAdapterService[Event](vertx, options, logAdapterInfo, Event(_))
 
-  private[vertx] def apply(logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, options: ServiceOptions): LogAdapterService[ConfirmableEvent] =
+  private def apply(logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, options: ServiceOptions): LogAdapterService[ConfirmableEvent] =
     new LogAdapterService[ConfirmableEvent](vertx, options, logAdapterInfo, m => Event.withConfirmation(m, logAdapterInfo, vertx))
 }
 
