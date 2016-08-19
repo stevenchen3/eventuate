@@ -42,7 +42,7 @@ trait MessageDelivery extends MessageProducer {
 
 trait UnboundDelivery extends MessageDelivery {
   override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] =
-    Future(events.foreach(producer.send))
+    Future(events.foreach(producer.write))
 }
 
 trait ReactiveDelivery extends MessageDelivery {

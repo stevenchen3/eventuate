@@ -34,11 +34,17 @@ class DurableEventMessageCodec(implicit system: ActorSystem) extends MessageCode
   override def transform(event: DurableEvent): DurableEvent =
     event
 
-  override def decodeFromWire(pos: Int, buffer: Buffer): DurableEvent =
-    serialization.deserialize(buffer.getBytes, classOf[DurableEvent]).get
+  override def decodeFromWire(pos: Int, buffer: Buffer): DurableEvent = {
+    val payloadSize = buffer.getInt(pos)
+    val payloadStart = pos + Integer.BYTES
+    serialization.deserialize(buffer.getBytes(payloadStart, payloadStart + payloadSize), classOf[DurableEvent]).get
+  }
 
-  override def encodeToWire(buffer: Buffer, s: DurableEvent): Unit =
-    buffer.appendBytes(serialization.serialize(s).get)
+  override def encodeToWire(buffer: Buffer, s: DurableEvent): Unit = {
+    val payload = serialization.serialize(s).get
+    buffer.appendInt(payload.length)
+    buffer.appendBytes(payload)
+  }
 
   override def name(): String = DurableEvent.getClass.getSimpleName
 
