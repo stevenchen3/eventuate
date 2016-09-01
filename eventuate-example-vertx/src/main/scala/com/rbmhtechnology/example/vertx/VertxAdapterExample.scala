@@ -21,36 +21,39 @@ import java.nio.file.NoSuchFileException
 import java.time.Duration
 import java.util.UUID
 
-import akka.actor.{ ActorRef, ActorSystem, Props }
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.pattern.ask
 import akka.util.Timeout
 import com.rbmhtechnology.eventuate.adapter.vertx._
 import com.rbmhtechnology.eventuate.log.EventLogWriter
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog
-import com.rbmhtechnology.eventuate.{ EventsourcedView, ReplicationConnection, ReplicationEndpoint }
+import com.rbmhtechnology.eventuate.{EventsourcedView, ReplicationConnection, ReplicationEndpoint}
 import io.vertx.core._
 import io.vertx.core.buffer.Buffer
+import io.vertx.core.eventbus.Message
 import io.vertx.core.file.FileSystemException
 import io.vertx.core.json.JsonObject
 
 import scala.concurrent.duration._
-import scala.concurrent.{ ExecutionContext, Future, Promise }
-import scala.util.{ Failure, Random, Success }
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.{Failure, Random, Success}
 
 object Logs {
   val logA = "log_S_A"
   val logB = "log_S_B"
 }
 
-object Consumers {
-  val processor = "processor-verticle"
+object Endpoints {
+  val Processor = "eb-address:logA-processor"
+  val PublishReceiver = "eb-address:logB-publish-receiver"
+  val Writer = "eb-address:logB-writer"
 }
 
 object VertxAdapterExample extends App {
 
-  import Consumers._
-  import Logs._
+  import Endpoints._
   import ExampleVertxExtensions._
+  import Logs._
 
   implicit val timeout = Timeout(5.minutes)
   implicit val system = ActorSystem(ReplicationConnection.DefaultRemoteSystemName)
@@ -62,9 +65,9 @@ object VertxAdapterExample extends App {
     logFactory = logId => LeveldbEventLog.props(logId), connections = Set())
 
   val adapter = VertxEventbusAdapter(AdapterConfig(
-    LogAdapter.readFrom(logA).sendTo(processor).withConfirmedDelivery(Duration.ofSeconds(3)),
-    LogAdapter.writeTo(logB),
-    LogAdapter.readFrom(logB).publish()),
+    LogAdapter.readFrom(logA, "logA-confirmed-adapter").sendTo(Processor).withConfirmedDelivery(Duration.ofSeconds(3), batchSize = 2),
+    LogAdapter.writeTo(logB, "logB-write-adapter", Writer),
+    LogAdapter.readFrom(logB, "logB-publish-adapter").publish(PublishReceiver)),
     endpoint, vertx, new DiskStorageProvider("target/progress/vertx-scala", vertx))
 
   (for {
@@ -95,39 +98,46 @@ object VertxAdapterExample extends App {
 }
 
 class ProcessorVerticle extends AbstractVerticle {
-  import Consumers._
-  import Logs._
+  import VertxHandlerConverters._
 
   val r = Random
+  var confirmedEvents = Set[String]()
 
   override def start(): Unit = {
-    val readService = LogAdapterService(logA, processor, vertx)
-    val writeService = LogAdapterService(logB, vertx)
+    val messageWriter = vertx.eventBus().sender[String](Endpoints.Writer)
 
-    readService.onEvent { (ev, sub) =>
-      if (r.nextFloat() < 0.4) {
-        println(s"[v_processor] dropped   [${ev.payload}]")
-      } else {
-        println(s"[v_processor] processed [${ev.payload}]")
+    vertx.eventBus().consumer[String](Endpoints.Processor, new Handler[Message[String]] {
+      override def handle(msg: Message[String]): Unit = {
+        val ev = msg.body()
 
-        writeService.persist(s"*processed*${ev.payload}") {
-          case Success(res) => ev.confirm()
-          case Failure(err) => println(s"[verticle] persist failed with: ${err.getMessage}")
+        if (confirmedEvents.contains(ev)) {
+          msg.reply(null)
+        } else if (r.nextFloat() < 0.4) {
+          println(s"[v_processor] dropped   [$ev]")
+        } else {
+          println(s"[v_processor] processed [$ev]")
+
+          messageWriter.send[Any](s"*processed*$ev", { (ar: AsyncResult[Message[Any]]) =>
+            if (ar.succeeded()) {
+              confirmedEvents = confirmedEvents + ev
+              msg.reply(null)
+            } else {
+              println(s"[verticle] persist failed with: ${ar.cause().getMessage}")
+            }
+          }.asVertxHandler)
         }
       }
-    }
+    })
   }
 }
 
 class ReaderVerticle extends AbstractVerticle {
-  import Logs._
+  import VertxHandlerConverters._
 
   override def start(): Unit = {
-    val readService = LogAdapterService(logB, vertx)
-
-    readService.onEvent { (ev, sub) =>
-      println(s"[${config.getString("name")}]  received  [${ev.payload}]")
-    }
+    vertx.eventBus().consumer[String](Endpoints.PublishReceiver).handler({ (msg: Message[String]) =>
+      println(s"[${config.getString("name")}]  received  [${msg.body}]")
+    }.asVertxHandler)
   }
 }
 

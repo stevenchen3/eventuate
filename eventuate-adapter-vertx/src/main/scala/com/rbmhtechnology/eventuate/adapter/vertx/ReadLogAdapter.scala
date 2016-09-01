@@ -18,39 +18,33 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import com.rbmhtechnology.eventuate.{ DurableEvent, EventsourcedWriter }
 import io.vertx.core.Vertx
-import io.vertx.core.eventbus.{ MessageProducer => VertxMessageProducer }
+import io.vertx.core.eventbus.{ DeliveryOptions, MessageProducer => VertxMessageProducer }
 
 import scala.concurrent.{ ExecutionContext, Future }
 
 trait MessageProducer {
   def vertx: Vertx
-  def logAdapterInfo: LogAdapterInfo
-  def producer: VertxMessageProducer[DurableEvent]
+  def endpoint: VertxEndpoint
+  def producer: VertxMessageProducer[Any]
 }
 
 trait MessagePublisher extends MessageProducer {
-  override lazy val producer = vertx.eventBus().publisher[DurableEvent](logAdapterInfo.readAddress)
+  override lazy val producer = vertx.eventBus().publisher[Any](endpoint.address,
+    new DeliveryOptions().setCodecName(AkkaSerializationMessageCodec.Name))
 }
 
 trait MessageSender extends MessageProducer {
-  override lazy val producer = vertx.eventBus().sender[DurableEvent](logAdapterInfo.readAddress)
+  override lazy val producer = vertx.eventBus().sender[Any](endpoint.address,
+    new DeliveryOptions().setCodecName(AkkaSerializationMessageCodec.Name))
 }
 
 trait MessageDelivery extends MessageProducer {
-  def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit]
+  def deliver(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit]
 }
 
 trait UnboundDelivery extends MessageDelivery {
-  override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] =
+  override def deliver(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] =
     Future(events.foreach(producer.write))
-}
-
-trait ReactiveDelivery extends MessageDelivery {
-  override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] = ??? // TODO
-
-  def backpressureOptions: BackpressureOptions
-
-  producer.setWriteQueueMaxSize(backpressureOptions.maxItems)
 }
 
 trait ProgressStore[R, W] {
@@ -89,7 +83,7 @@ trait ReadLogAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery
 
   override def write(): Future[W] = {
     val snr = lastSequenceNr
-    val ft = deliver(events).flatMap(x => writeProgress(id, snr))
+    val ft = deliver(events.map(_.payload)).flatMap(x => writeProgress(id, snr))
 
     events = Vector.empty
     ft

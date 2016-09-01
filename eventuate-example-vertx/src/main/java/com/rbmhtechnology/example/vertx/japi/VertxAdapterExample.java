@@ -24,7 +24,6 @@ import com.rbmhtechnology.eventuate.AbstractEventsourcedView;
 import com.rbmhtechnology.eventuate.ApplicationVersion;
 import com.rbmhtechnology.eventuate.ReplicationEndpoint;
 import com.rbmhtechnology.eventuate.adapter.vertx.*;
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.LogAdapterService;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.StorageProvider;
 import com.rbmhtechnology.eventuate.log.EventLogWriter;
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog;
@@ -65,9 +64,10 @@ public class VertxAdapterExample {
       (String logId) -> LeveldbEventLog.props(logId, "log", true), system);
 
     final VertxEventbusAdapter adapter = VertxEventbusAdapter.create(AdapterConfig.of(
-      LogAdapter.readFrom(LOG_A).sendTo(PROCESSOR).withConfirmedDelivery(Duration.ofSeconds(3)),
-      LogAdapter.writeTo(LOG_B),
-      LogAdapter.readFrom(LOG_B).publish()),
+//      LogAdapter.readFrom(LOG_A).sendTo(PROCESSOR).withConfirmedDelivery(Duration.ofSeconds(3)),
+//      LogAdapter.writeTo(LOG_B),
+//      LogAdapter.readFrom(LOG_B).publish()
+      ),
       endpoint, vertx, new DiskStorageProvider("target/progress/vertx-rx-java", vertx), system);
 
     deployVerticles(vertx).subscribe(
@@ -101,37 +101,37 @@ public class VertxAdapterExample {
 
     @Override
     public void start() throws Exception {
-      final LogAdapterService<ConfirmableEvent> readService = LogAdapterService.create(LOG_A, PROCESSOR, vertx);
-      final LogAdapterService<Event> writeService = LogAdapterService.create(LOG_B, vertx);
+//      final LogAdapterService<ConfirmableEvent> readService = LogAdapterService.create(LOG_A, PROCESSOR, vertx);
+//      final LogAdapterService<Event> writeService = LogAdapterService.create(LOG_B, vertx);
 
-      readService.onEvent()
-        .filter(this::shouldPass)
-        .doOnNext(ev -> out.println(String.format("[v_processor] processed [%s]", ev.payload())))
-        .flatMap(ev -> writeService.persist("*processed*" + ev.payload()).map(x -> ev))
-        .subscribe(
-          ConfirmableEvent::confirm,
-          err -> out.println(String.format("[verticle] persist failed with: %s", err.getMessage()))
-        );
+//      readService.onEvent()
+//        .filter(this::shouldPass)
+//        .doOnNext(ev -> out.println(String.format("[v_processor] processed [%s]", ev.payload())))
+//        .flatMap(ev -> writeService.persist("*processed*" + ev.payload()).map(x -> ev))
+//        .subscribe(
+//          ConfirmableEvent::confirm,
+//          err -> out.println(String.format("[verticle] persist failed with: %s", err.getMessage()))
+//        );
     }
 
-    private Boolean shouldPass(final ConfirmableEvent ev) {
-      if (r.nextFloat() < 0.4) {
-        out.println(String.format("[v_processor] dropped   [%s]", ev.payload()));
-        return false;
-      }
-      return true;
-    }
+//    private Boolean shouldPass(final ConfirmableEvent ev) {
+//      if (r.nextFloat() < 0.4) {
+//        out.println(String.format("[v_processor] dropped   [%s]", ev.payload()));
+//        return false;
+//      }
+//      return true;
+//    }
   }
 
   public static class ReaderVerticle extends AbstractVerticle {
     @Override
     public void start() throws Exception {
-      final LogAdapterService<Event> readService = LogAdapterService.create(LOG_B, vertx);
+//      final LogAdapterService readService = LogAdapterService.create(LOG_B, vertx);
 
-      readService.onEvent()
-        .subscribe(
-          ev -> out.println(String.format("[%s]  received  [%s]", config().getString("name"), ev.payload()))
-        );
+//      readService.onEvent()
+//        .subscribe(
+//          ev -> out.println(String.format("[%s]  received  [%s]", config().getString("name"), ev.payload()))
+//        );
     }
   }
 

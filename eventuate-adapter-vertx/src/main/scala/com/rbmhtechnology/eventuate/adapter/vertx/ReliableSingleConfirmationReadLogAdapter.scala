@@ -18,25 +18,26 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, Props }
 import akka.pattern.pipe
-import com.rbmhtechnology.eventuate.{ ConfirmedDelivery, DurableEvent, EventsourcedActor }
+import com.rbmhtechnology.eventuate.{ ConfirmedDelivery, EventsourcedActor }
 import io.vertx.core.Vertx
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{ Failure, Success }
 
 private[vertx] object ReliableSingleConfirmationReadLogAdapter {
-  case class DeliverEvent(durableEvent: DurableEvent, deliveryId: String)
+
+  case class DeliverEvent(event: Any, deliveryId: String)
   case class Confirm(deliveryId: String)
-  case class DeliverFailed(durableEvent: DurableEvent, deliveryId: String, err: Throwable)
+  case class DeliverFailed(event: Any, deliveryId: String, err: Throwable)
   case object Redeliver
 
   case class DeliveryConfirmed()
 
-  def props(id: String, eventLog: ActorRef, logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
-    Props(new ReliableSingleConfirmationReadLogAdapter(id, eventLog, logAdapterInfo, vertx, deliveryDelay))
+  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
+    Props(new ReliableSingleConfirmationReadLogAdapter(id, eventLog, endpoint, vertx, deliveryDelay))
 }
 
-private[vertx] class ReliableSingleConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val logAdapterInfo: SendLogAdapterInfo, val vertx: Vertx, deliveryDelay: FiniteDuration)
+private[vertx] class ReliableSingleConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, deliveryDelay: FiniteDuration)
   extends EventsourcedActor with MessageSender with ConfirmedDelivery {
 
   import ReliableSingleConfirmationReadLogAdapter._
@@ -72,7 +73,6 @@ private[vertx] class ReliableSingleConfirmationReadLogAdapter(val id: String, va
     // confirmations should not be published
     case ev =>
       val deliveryId = lastSequenceNr.toString
-      val event = lastHandledEvent
-      deliver(deliveryId, DeliverEvent(event, deliveryId), self.path)
+      deliver(deliveryId, DeliverEvent(ev, deliveryId), self.path)
   }
 }

@@ -25,76 +25,74 @@ import scala.concurrent.duration._
 
 class ReliableSingleConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
-  with VertxEventbus with ActorLogAdapterService {
-
-  import TestExtensions._
+  with VertxEventbus {
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"
-  var serviceProbe: TestProbe = _
+  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    serviceProbe = TestProbe()
 
+    ebProbe = eventBusProbe(endpoint)
     registerCodec()
-    logAdapter(logName, consumer)
-    notifyOnConfirmableEvent(serviceProbe.ref)
+    logAdapter()
   }
 
-  def logAdapter(logName: String, consumer: String): ActorRef =
-    system.actorOf(ReliableSingleConfirmationReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, redeliverDelay))
+  def logAdapter(): ActorRef =
+    system.actorOf(ReliableSingleConfirmationReadLogAdapter.props(inboundLogId, log, endpoint, vertx, redeliverDelay))
 
   "A ReliableSingleConfirmationReadLogAdapter" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
-        writeEvents("ev", 5)
+        writeEvents("e", 5)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
+        ebProbe.expectVertxMsg(body = "e-3")
+        ebProbe.expectVertxMsg(body = "e-4")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
       "redeliver all unconfirmed events" in {
-        writeEvents("ev", 2)
+        writeEvents("e", 2)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
       }
       "redeliver only unconfirmed events" in {
-        writeEvents("ev", 5)
+        writeEvents("e", 5)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
+        ebProbe.expectVertxMsg(body = "e-5")
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
       "redeliver only unconfirmed events while processing new events" in {
-        writeEvents("ev", 3)
+        writeEvents("e", 3)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
+        ebProbe.expectVertxMsg(body = "e-3")
 
-        writeEvents("ev", 2)
+        writeEvents("e", 2, start = 4)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 6)
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
+        ebProbe.expectVertxMsg(body = "e-5")
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 6)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-3")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
     }
   }

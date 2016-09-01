@@ -27,27 +27,17 @@ private[vertx] object WriteLogAdapter {
 
   case class PersistEvent(event: Any, message: Message[Any])
 
-  def props(id: String, eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx): Props =
-    Props(new WriteLogAdapter(id, eventLog, logAdapterInfo, vertx))
+  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx): Props =
+    Props(new WriteLogAdapter(id, eventLog, endpoint, vertx))
 }
 
-private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx) extends EventsourcedActor {
+private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx) extends EventsourcedActor {
 
   import WriteLogAdapter._
-  import VertxExtensions._
 
-  var messageConsumer = vertx.eventBus().localConsumer[Any](logAdapterInfo.writeAddress, new VertxHandler[Message[Any]] {
+  var messageConsumer = vertx.eventBus().localConsumer[Any](endpoint.address, new VertxHandler[Message[Any]] {
     override def handle(message: Message[Any]): Unit = {
-      message.headers().getHeaderValue(Headers.Action) match {
-        case Some(Headers.Action.Persist) =>
-          self ! PersistEvent(message.body(), message)
-        case Some(Headers.Action.Connect) =>
-          message.reply("ok")
-        case Some(action) =>
-          message.fail(0, s"Action '$action' is not supported.")
-        case _ =>
-          message.fail(0, "Header 'action' is missing.")
-      }
+      self ! PersistEvent(message.body(), message)
     }
   })
 

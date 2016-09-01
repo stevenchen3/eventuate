@@ -16,13 +16,25 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.testkit.TestKit
-import com.rbmhtechnology.eventuate.DurableEvent
+import akka.testkit.{TestKit, TestProbe}
 import io.vertx.core.Vertx
+import io.vertx.core.eventbus.Message
 import org.scalatest.{BeforeAndAfterEach, Suite}
+
+import scala.concurrent.duration.Duration
+import scala.reflect.ClassTag
+import scala.util.Failure
 
 trait VertxEventbus extends BeforeAndAfterEach {
   this: TestKit with Suite =>
+
+  import VertxHandlerConverters._
+
+  case class VertxEventBusMessage[T](body: T, message: Message[T]) {
+    def confirm(): Unit = {
+      message.reply(null)
+    }
+  }
 
   var vertx: Vertx = _
 
@@ -32,6 +44,30 @@ trait VertxEventbus extends BeforeAndAfterEach {
   }
 
   def registerCodec(): Unit = {
-    vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
+    vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
+  }
+
+  def eventBusProbe(endpoint: VertxEndpoint): TestProbe = {
+    val probe = TestProbe()
+    val handler = (m: Message[String]) => probe.ref ! VertxEventBusMessage(m.body(), m)
+    vertx.eventBus().consumer[String](endpoint.address, handler.asVertxHandler)
+    probe
+  }
+
+  implicit class RichTestProbe(probe: TestProbe) {
+    def expectVertxMsg[T](body: T, max: Duration = Duration.Undefined)(implicit t: ClassTag[T]): VertxEventBusMessage[T] = {
+      probe.expectMsgPF[VertxEventBusMessage[T]](max, hint = s"VertxEventBusMessage($body, _)") {
+        case m: VertxEventBusMessage[T] if m.body == body => m
+      }
+    }
+
+    def receiveNVertxMsg[T](n: Int): Seq[VertxEventBusMessage[T]] =
+      probe.receiveN(n).asInstanceOf[Seq[VertxEventBusMessage[T]]]
+
+    def expectFailure[T](max: Duration = Duration.Undefined)(implicit t: ClassTag[T]): T = {
+      probe.expectMsgPF[T](max, hint = s"Failure($t)") {
+        case f@Failure(err:T) => err
+      }
+    }
   }
 }

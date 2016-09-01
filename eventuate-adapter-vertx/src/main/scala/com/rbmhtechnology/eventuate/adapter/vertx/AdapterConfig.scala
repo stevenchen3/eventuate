@@ -25,19 +25,19 @@ import scala.collection.immutable.Seq
 import scala.concurrent.duration.FiniteDuration
 
 object LogAdapter {
-  def readFrom(logName: String): ReadLogAdapterConfigBuilder =
-    new ReadLogAdapterConfigBuilder(logName)
+  def readFrom(logName: String, id: String): ReadLogAdapterConfigBuilder =
+    new ReadLogAdapterConfigBuilder(logName, id)
 
-  def writeTo(logName: String): LogAdapterConfig =
-    new SimpleLogAdapterConfig(WriteLogAdapterDescriptor(logName))
+  def writeTo(logName: String, id: String, endpoint: String): LogAdapterConfig =
+    new SimpleLogAdapterConfig(WriteLogAdapterDescriptor(id, logName, VertxEndpoint(endpoint)))
 }
 
-class ReadLogAdapterConfigBuilder(private val logName: String) {
-  def publish(): LogAdapterConfig =
-    new SimpleLogAdapterConfig(PublishReadLogAdapterDescriptor(logName))
+class ReadLogAdapterConfigBuilder(private val logName: String, private val id: String) {
+  def publish(endpoint: String): LogAdapterConfig =
+    new SimpleLogAdapterConfig(PublishReadLogAdapterDescriptor(id, logName, VertxEndpoint(endpoint)))
 
-  def sendTo(consumer: String): SendLogAdapterConfig =
-    new SendLogAdapterConfig(SendReadLogAdapterDescriptor(logName, consumer, None))
+  def sendTo(endpoint: String): SendLogAdapterConfig =
+    new SendLogAdapterConfig(SendReadLogAdapterDescriptor(id, logName, VertxEndpoint(endpoint)))
 }
 
 trait LogAdapterConfig {
@@ -47,19 +47,12 @@ trait LogAdapterConfig {
 class SimpleLogAdapterConfig(private[eventuate] val logDescriptor: LogAdapterDescriptor) extends LogAdapterConfig
 
 class SendLogAdapterConfig(private[eventuate] val logDescriptor: SendReadLogAdapterDescriptor) extends LogAdapterConfig {
-  def withBackPressureSupport(options: BackpressureOptions): SendLogAdapterConfig = {
-    new SendLogAdapterConfig(logDescriptor.copy(backPressure = Some(options)))
-  }
-
-  def withConfirmedDelivery(redeliverDelay: Duration): ReliableSendLogAdapterConfig = {
-    new ReliableSendLogAdapterConfig(ReliableReadLogAdapterDescriptor(logDescriptor.name, logDescriptor.consumer, FiniteDuration(redeliverDelay.toNanos, TimeUnit.NANOSECONDS), logDescriptor.backPressure))
+  def withConfirmedDelivery(redeliverDelay: Duration, batchSize: Int = 10): ReliableSendLogAdapterConfig = {
+    new ReliableSendLogAdapterConfig(ReliableReadLogAdapterDescriptor(logDescriptor.id, logDescriptor.logName, logDescriptor.endpoint, FiniteDuration(redeliverDelay.toNanos, TimeUnit.NANOSECONDS), batchSize))
   }
 }
 
 class ReliableSendLogAdapterConfig(private[eventuate] val logDescriptor: ReliableReadLogAdapterDescriptor) extends LogAdapterConfig {
-  def withBackPressureSupport(options: BackpressureOptions): ReliableSendLogAdapterConfig = {
-    new ReliableSendLogAdapterConfig(logDescriptor.copy(backPressure = Some(options)))
-  }
 }
 
 object AdapterConfig {

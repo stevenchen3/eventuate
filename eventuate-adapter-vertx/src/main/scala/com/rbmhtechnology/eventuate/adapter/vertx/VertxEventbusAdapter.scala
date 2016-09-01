@@ -17,10 +17,10 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, ActorSystem, Props }
+import com.rbmhtechnology.eventuate.ReplicationEndpoint
 import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
-import com.rbmhtechnology.eventuate.{ DurableEvent, ReplicationEndpoint }
 import io.vertx.core.Vertx
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 
@@ -46,20 +46,12 @@ object VertxEventbusAdapter {
     storageProvider: RxStorageProvider,
     system: ActorSystem): VertxEventbusAdapter =
     new VertxEventbusAdapter(adapterConfig, replicationEndpoint, vertx, storageProvider.asScala)(system)
-
-  private[vertx] def logId(logName: String, logType: LogAdapterType, consumer: Option[String] = None): String =
-    s"$logName${consumerAddress(consumer, "_")}_${logType.name}"
-
-  private def consumerAddress(consumer: Option[String], delimiter: String): String =
-    consumer.map(c => s"$delimiter$c").getOrElse("")
 }
 
 class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: ReplicationEndpoint, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem) {
 
-  import VertxEventbusAdapter._
-
   private def registerCodec(): Unit =
-    vertx.eventBus().registerDefaultCodec(classOf[DurableEvent], DurableEventMessageCodec(system))
+    vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
 
   def activate(): Unit = {
     registerCodec()
@@ -72,21 +64,17 @@ class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: Re
     def log(name: String): ActorRef = replicationEndpoint.logs(name)
 
     logs.map {
-      case PublishReadLogAdapterDescriptor(n) =>
-        PublishReadLogAdapter.props(logId(n, ReadLog), log(n), LogAdapterInfo.publishAdapter(n), vertx, storageProvider)
+      case PublishReadLogAdapterDescriptor(id, logName, endpoint) =>
+        PublishReadLogAdapter.props(id, log(logName), endpoint, vertx, storageProvider)
 
-      case SendReadLogAdapterDescriptor(n, c, None) =>
-        SendReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider)
+      case SendReadLogAdapterDescriptor(id, logName, endpoint) =>
+        SendReadLogAdapter.props(id, log(logName), endpoint, vertx, storageProvider)
 
-      case SendReadLogAdapterDescriptor(n, c, Some(b)) => ???
+      case ReliableReadLogAdapterDescriptor(id, logName, endpoint, delay, batchSize) =>
+        ReliableBatchConfirmationReadLogAdapter.props(id, log(logName), endpoint, vertx, storageProvider, Options(delay, batchSize))
 
-      case ReliableReadLogAdapterDescriptor(n, c, d, None) =>
-        ReliableBatchConfirmationReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider, Options(d, 10))
-
-      case ReliableReadLogAdapterDescriptor(n, c, d, Some(b)) => ???
-
-      case WriteLogAdapterDescriptor(n) =>
-        WriteLogAdapter.props(logId(n, WriteLog), log(n), LogAdapterInfo.writeAdapter(n), vertx)
+      case WriteLogAdapterDescriptor(id, logName, endpoint) =>
+        WriteLogAdapter.props(id, log(logName), endpoint, vertx)
     }
   }
 }

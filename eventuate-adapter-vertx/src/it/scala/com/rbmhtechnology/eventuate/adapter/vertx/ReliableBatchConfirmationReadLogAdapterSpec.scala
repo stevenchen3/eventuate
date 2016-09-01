@@ -26,25 +26,23 @@ import scala.concurrent.duration._
 
 class ReliableBatchConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
-  with ActorStorage with EventWriter with VertxEventbus with ActorLogAdapterService {
-
-  import TestExtensions._
+  with ActorStorage with EventWriter with VertxEventbus {
 
   val redeliverTimeout = 1.seconds
   val storageTimeout = 500.millis
   val inboundLogId = "log_inbound_confirm"
-  var serviceProbe: TestProbe = _
+  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    serviceProbe = TestProbe()
 
     registerCodec()
-    notifyOnConfirmableEvent(serviceProbe.ref)
+    ebProbe = eventBusProbe(endpoint)
   }
 
   def logAdapter(batchSize: Int = 10): ActorRef =
-    system.actorOf(ReliableBatchConfirmationReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, actorStorageProvider(), Options(redeliverTimeout, batchSize)))
+    system.actorOf(ReliableBatchConfirmationReadLogAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider(), Options(redeliverTimeout, batchSize)))
 
   def read: String = read(inboundLogId)
 
@@ -54,164 +52,164 @@ class ReliableBatchConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("t
     "reading events from an event log" must {
       "deliver events to a single consumer" in {
         logAdapter()
-        writeEvents("ev", 5)
+        writeEvents("e", 5)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
+        ebProbe.expectVertxMsg(body = "e-3")
+        ebProbe.expectVertxMsg(body = "e-4")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
       "deliver events based on the replication progress" in {
         logAdapter()
-        writeEvents("ev", 5)
+        writeEvents("e", 5)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-3")
+        ebProbe.expectVertxMsg(body = "e-4")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
       "persist event confirmations" in {
         logAdapter()
-        writeEvents("ev", 3)
+        writeEvents("e", 3)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
 
         storageProbe.expectMsg(write(3))
       }
       "persist event confirmations in batches" in {
         logAdapter(batchSize = 2)
-        writeEvents("ev", 4)
+        writeEvents("e", 4)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
 
         storageProbe.expectMsg(write(2))
         storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
 
         storageProbe.expectMsg(write(4))
         storageProbe.reply(2L)
       }
       "persist event confirmations in batches of smaller size if no further events present" in {
         logAdapter(batchSize = 2)
-        writeEvents("ev", 3)
+        writeEvents("e", 3)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
 
         storageProbe.expectMsg(write(2))
         storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
 
         storageProbe.expectMsg(write(3))
         storageProbe.reply(3L)
       }
       "redeliver whole batch if events are unconfirmed" in {
         logAdapter()
-        writeEvents("ev", 5)
+        writeEvents("e", 5)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5).confirm()
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
+        ebProbe.expectVertxMsg(body = "e-5").confirm()
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
+        ebProbe.expectVertxMsg(body = "e-3")
+        ebProbe.expectVertxMsg(body = "e-4")
+        ebProbe.expectVertxMsg(body = "e-5")
       }
       "redeliver unconfirmed event batches while replaying events" in {
         logAdapter(batchSize = 2)
-        writeEvents("ev", 4)
+        writeEvents("e", 4)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
 
         storageProbe.expectMsg(write(2))
         storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
+        ebProbe.expectVertxMsg(body = "e-4")
 
         storageProbe.expectMsg(read)
         storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
       }
       "redeliver unconfirmed event batches while processing new events" in {
         logAdapter(batchSize = 2)
-        writeEvents("ev", 2)
+        writeEvents("e", 2)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
 
         storageProbe.expectMsg(write(2))
         storageProbe.reply(2L)
 
-        writeEvents("ev", 2)
+        writeEvents("e", 2, start = 3)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
 
         storageProbe.expectMsg(write(3))
         storageProbe.reply(3L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        ebProbe.expectVertxMsg(body = "e-4")
 
         storageProbe.expectMsg(read)
         storageProbe.reply(3L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+        ebProbe.expectVertxMsg(body = "e-4").confirm()
       }
     }
     "encountering a write failure" must {
       "restart and start at the last position" in {
         logAdapter()
-        writeEvents("ev", 3)
+        writeEvents("e", 3)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        ebProbe.expectVertxMsg(body = "e-1").confirm()
+        ebProbe.expectVertxMsg(body = "e-2").confirm()
+        ebProbe.expectVertxMsg(body = "e-3").confirm()
 
         storageProbe.expectMsg(write(3))
         storageProbe.reply(Status.Failure(new RuntimeException("err")))
@@ -219,9 +217,9 @@ class ReliableBatchConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("t
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        ebProbe.expectVertxMsg(body = "e-1")
+        ebProbe.expectVertxMsg(body = "e-2")
+        ebProbe.expectVertxMsg(body = "e-3")
       }
     }
   }

@@ -20,7 +20,6 @@ import java.util.concurrent.TimeoutException
 
 import akka.actor.{ ActorRef, Props }
 import akka.pattern.after
-import com.rbmhtechnology.eventuate.DurableEvent
 import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import io.vertx.core.Vertx
 
@@ -32,24 +31,24 @@ private[vertx] object ReliableBatchConfirmationReadLogAdapter {
 
   case class Options(redeliverTimeout: FiniteDuration, batchSize: Int)
 
-  def props(id: String, eventLog: ActorRef, logAdapterInfo: SendLogAdapterInfo, vertx: Vertx, storageProvider: StorageProvider, options: Options): Props =
-    Props(new ReliableBatchConfirmationReadLogAdapter(id, eventLog, logAdapterInfo, vertx, storageProvider, options))
+  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, storageProvider: StorageProvider, options: Options): Props =
+    Props(new ReliableBatchConfirmationReadLogAdapter(id, eventLog, endpoint, vertx, storageProvider, options))
 }
 
-private[vertx] class ReliableBatchConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val logAdapterInfo: SendLogAdapterInfo, val vertx: Vertx, val storageProvider: StorageProvider, options: Options)
+private[vertx] class ReliableBatchConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, val storageProvider: StorageProvider, options: Options)
   extends ReadLogAdapter[Long, Long] with MessageSender with SequenceNumberProgressStore {
 
   import VertxExtensions._
 
   override def replayBatchSize: Int = options.batchSize
 
-  override def deliver(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] = {
+  override def deliver(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {
     Future.firstCompletedOf(Seq(
       deliverEventsWithConfirmation(events),
       timeoutFt(options.redeliverTimeout)))
   }
 
-  def deliverEventsWithConfirmation(events: Vector[DurableEvent])(implicit ec: ExecutionContext): Future[Unit] = {
+  def deliverEventsWithConfirmation(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {
     Future.sequence(events.map(producer.sendFt[Unit](_))).map(_ => Unit)
   }
 

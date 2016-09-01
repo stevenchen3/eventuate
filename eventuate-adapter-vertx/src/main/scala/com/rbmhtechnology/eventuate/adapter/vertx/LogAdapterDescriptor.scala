@@ -18,17 +18,13 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import scala.concurrent.duration.FiniteDuration
 
-sealed trait LogAdapterType {
-  def name: String
-}
-case object ReadLog extends LogAdapterType { val name: String = "read-log" }
-case object WriteLog extends LogAdapterType { val name: String = "write-log" }
-
 sealed trait LogAdapterDescriptor {
-  def name: String
+  def id: String
+  def logName: String
+  def endpoint: VertxEndpoint
 }
 
-case class PublishReadLogAdapterDescriptor(name: String) extends LogAdapterDescriptor
-case class SendReadLogAdapterDescriptor(name: String, consumer: String, backPressure: Option[BackpressureOptions]) extends LogAdapterDescriptor
-case class ReliableReadLogAdapterDescriptor(name: String, consumer: String, redeliverDelay: FiniteDuration, backPressure: Option[BackpressureOptions]) extends LogAdapterDescriptor
-case class WriteLogAdapterDescriptor(name: String) extends LogAdapterDescriptor
+case class PublishReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor
+case class SendReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor
+case class ReliableReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint, redeliverDelay: FiniteDuration, batchSize: Int) extends LogAdapterDescriptor
+case class WriteLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor

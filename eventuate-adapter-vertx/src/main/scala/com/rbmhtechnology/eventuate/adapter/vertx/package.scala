@@ -17,7 +17,7 @@
 package com.rbmhtechnology.eventuate.adapter
 
 import com.rbmhtechnology.eventuate.EventsourcedView
-import io.vertx.core.eventbus.{ DeliveryOptions, Message, MessageProducer => VertxMessageProducer }
+import io.vertx.core.eventbus.{ Message, MessageProducer => VertxMessageProducer }
 import io.vertx.core.{ Future => VertxFuture, _ }
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 import rx.functions.Func1
@@ -52,6 +52,18 @@ package object vertx {
       }
     }
 
+    implicit class EventuateHandlerAsVertxHandler[A](h: EventsourcedView.Handler[A]) {
+      def asVertxHandler: Handler[AsyncResult[A]] = new Handler[AsyncResult[A]] {
+        override def handle(ar: AsyncResult[A]): Unit = {
+          if (ar.succeeded()) {
+            h(Success(ar.result()))
+          } else {
+            h(Failure(ar.cause()))
+          }
+        }
+      }
+    }
+
     implicit class HandlerAsEventuateHandler[A](h: Handler[AsyncResult[A]]) {
       def asEventuateHandler: EventsourcedView.Handler[A] = {
         case Success(res) => h.handle(VertxFuture.succeededFuture(res))
@@ -59,7 +71,7 @@ package object vertx {
       }
     }
 
-    implicit class PromiseToHandler[A](promise: Promise[A]) {
+    implicit class PromiseAsVertxHandler[A](promise: Promise[A]) {
       def asVertxHandler: Handler[AsyncResult[A]] = new Handler[AsyncResult[A]] {
         override def handle(ar: AsyncResult[A]): Unit = {
           if (ar.succeeded()) {
@@ -83,16 +95,6 @@ package object vertx {
 
   object VertxExtensions {
     import VertxHandlerConverters._
-
-    implicit class RichDeliveryOptions(o: DeliveryOptions) {
-      def addHeader(header: HeaderValue): DeliveryOptions =
-        o.addHeader(header.name, header.value)
-    }
-
-    implicit class RichMultiMap(m: MultiMap) {
-      def getHeaderValue(header: Header): Option[HeaderValue] =
-        Option(m.get(header.name)).flatMap(header.valueByName)
-    }
 
     implicit class RichMessageProducer[A](producer: VertxMessageProducer[A]) {
       def sendFt[B](message: A)(implicit ec: ExecutionContext): Future[Message[B]] = {

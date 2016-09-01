@@ -20,11 +20,11 @@ import akka.actor.{ ActorRef, Props }
 import io.vertx.core.Vertx
 
 private[eventuate] object PublishReadLogAdapter {
-  def props(id: String, eventLog: ActorRef, logAdapterInfo: LogAdapterInfo, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new PublishReadLogAdapter(id, eventLog, logAdapterInfo, vertx, storageProvider))
+  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, storageProvider: StorageProvider): Props =
+    Props(new PublishReadLogAdapter(id, eventLog, endpoint, vertx, storageProvider))
       .withDispatcher("eventuate.log.dispatchers.write-dispatcher")
 }
 
-private[eventuate] class PublishReadLogAdapter(val id: String, val eventLog: ActorRef, val logAdapterInfo: LogAdapterInfo, val vertx: Vertx, val storageProvider: StorageProvider)
+private[eventuate] class PublishReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, val storageProvider: StorageProvider)
   extends ReadLogAdapter[Long, Long] with UnboundDelivery with MessagePublisher with SequenceNumberProgressStore {
 }

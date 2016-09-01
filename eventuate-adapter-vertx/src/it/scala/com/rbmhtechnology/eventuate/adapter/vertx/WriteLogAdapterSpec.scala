@@ -20,11 +20,13 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.EventsourcingProtocol._
 import com.rbmhtechnology.eventuate.{EventsourcedView, SingleLocationSpecLeveldb}
+import io.vertx.core.AsyncResult
+import io.vertx.core.eventbus.{Message, ReplyException}
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.collection.immutable.Seq
 import scala.concurrent.duration._
-import scala.util.Success
+import scala.util.{Failure, Success}
 
 object WriteLogAdapterSpec {
 
@@ -50,17 +52,15 @@ object WriteLogAdapterSpec {
 }
 
 class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
-  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEventbus with ActorLogAdapterService {
+  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEventbus {
 
-  import TestExtensions._
+  import VertxHandlerConverters._
   import WriteLogAdapterSpec._
 
+  val endpoint = VertxEndpoint("vertx-eb-endpoint")
   var resultProbe: TestProbe = _
   var logProbe: TestProbe = _
-  var logService: LogAdapterService[Event] = _
   var persist: (Any) => Unit = _
-
-  val serviceOptions = ServiceOptions(connectInterval = 500.millis, connectTimeout = 3.seconds)
 
   override def beforeEach(): Unit = {
     super.beforeEach()
@@ -70,18 +70,34 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
 
     registerCodec()
     logReader(logProbe.ref)
-    persist = createPersist(resultProbe.ref, logName, serviceOptions)
+    persist = createPersist(resultProbe.ref, endpoint)
+  }
+
+  def waitForStartup(): Unit = {
+    Thread.sleep(500)
   }
 
   def logReader(receiver: ActorRef): ActorRef =
     system.actorOf(Props(new LogReader("r", log, receiver)))
 
   def writeLogAdapter(eventLog: ActorRef = log): ActorRef = {
-    system.actorOf(WriteLogAdapter.props("write-log-adapter", eventLog, LogAdapterInfo.writeAdapter(logName), vertx))
+    val actor = system.actorOf(WriteLogAdapter.props("write-log-adapter", eventLog, endpoint, vertx))
+    waitForStartup()
+    actor
   }
 
   def failingWriteLog(failureEvents: Seq[Any] = Seq()): ActorRef = {
     system.actorOf(Props(new FailingWriteLog(log, failureEvents)))
+  }
+
+  def createPersist(eventNotifier: ActorRef, endpoint: VertxEndpoint): (Any) => Unit = {
+    (event: Any) => vertx.eventBus().send[Any](endpoint.address, event, {(ar: AsyncResult[Message[Any]]) =>
+      if (ar.succeeded()) {
+        eventNotifier ! Success(ar.result().body)
+      } else {
+        eventNotifier ! Failure(ar.cause())
+      }
+    }.asVertxHandler)
   }
 
   "A WriteLogAdapter" when {
@@ -111,55 +127,56 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
         logProbe.expectMsg("ev-3")
       }
     }
-    "started with a delay" must {
-      "persist events from before the adapter was started" in {
-        persist("ev-1")
-        persist("ev-2")
-        persist("ev-3")
-
-        Thread.sleep((serviceOptions.connectTimeout / 2).toMillis)
-        writeLogAdapter()
-
-        resultProbe.expectMsg(Success("ev-1"))
-        resultProbe.expectMsg(Success("ev-2"))
-        resultProbe.expectMsg(Success("ev-3"))
-
-        logProbe.expectMsg("ev-1")
-        logProbe.expectMsg("ev-2")
-        logProbe.expectMsg("ev-3")
-      }
-      "persist events from before and after the adapter was started" in {
-        persist("ev-1")
-        persist("ev-2")
-
-        Thread.sleep((serviceOptions.connectTimeout / 2).toMillis)
-        writeLogAdapter()
-
-        persist("ev-3")
-
-        resultProbe.expectMsg(Success("ev-1"))
-        resultProbe.expectMsg(Success("ev-2"))
-        resultProbe.expectMsg(Success("ev-3"))
-
-        logProbe.expectMsg("ev-1")
-        logProbe.expectMsg("ev-2")
-        logProbe.expectMsg("ev-3")
-      }
-      "resolve persist request with an error if adapter was not started" in {
-        persist("ev-1")
-        persist("ev-2")
-
-        resultProbe.expectFailure[ConnectionException]()
-        resultProbe.expectFailure[ConnectionException]()
-      }
-    }
+    // TODO determine if these tests should be deleted or a vertx eventbus interceptor can handle theses cases
+//    "started with a delay" must {
+//      "persist events from before the adapter was started" in {
+//        persist("ev-1")
+//        persist("ev-2")
+//        persist("ev-3")
+//
+//        Thread.sleep((serviceOptions.connectTimeout / 2).toMillis)
+//        writeLogAdapter()
+//
+//        resultProbe.expectMsg(Success("ev-1"))
+//        resultProbe.expectMsg(Success("ev-2"))
+//        resultProbe.expectMsg(Success("ev-3"))
+//
+//        logProbe.expectMsg("ev-1")
+//        logProbe.expectMsg("ev-2")
+//        logProbe.expectMsg("ev-3")
+//      }
+//      "persist events from before and after the adapter was started" in {
+//        persist("ev-1")
+//        persist("ev-2")
+//
+//        Thread.sleep((serviceOptions.connectTimeout / 2).toMillis)
+//        writeLogAdapter()
+//
+//        persist("ev-3")
+//
+//        resultProbe.expectMsg(Success("ev-1"))
+//        resultProbe.expectMsg(Success("ev-2"))
+//        resultProbe.expectMsg(Success("ev-3"))
+//
+//        logProbe.expectMsg("ev-1")
+//        logProbe.expectMsg("ev-2")
+//        logProbe.expectMsg("ev-3")
+//      }
+//      "resolve persist request with an error if adapter was not started" in {
+//        persist("ev-1")
+//        persist("ev-2")
+//
+//        resultProbe.expectFailure[ConnectionException]()
+//        resultProbe.expectFailure[ConnectionException]()
+//      }
+//    }
     "encountering an error while persisting events" must {
       "return a failure for the failed event" in {
         val actor = writeLogAdapter(failingWriteLog(Seq("ev-1")))
 
         persist("ev-1")
 
-        resultProbe.expectFailure[PersistenceException]()
+        resultProbe.expectFailure[ReplyException]()
 
         logProbe.expectNoMsg(1.second)
       }
@@ -167,7 +184,7 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
         val actor = writeLogAdapter(failingWriteLog(Seq("ev-1")))
 
         persist("ev-1")
-        resultProbe.expectFailure[PersistenceException]()
+        resultProbe.expectFailure[ReplyException]()
         logProbe.expectNoMsg(1.second)
 
         persist("ev-2")

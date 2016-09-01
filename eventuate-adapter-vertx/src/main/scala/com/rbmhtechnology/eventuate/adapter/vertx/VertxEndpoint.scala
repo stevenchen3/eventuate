@@ -16,4 +16,4 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-case class BackpressureOptions(maxItems: Int)
+case class VertxEndpoint(address: String)

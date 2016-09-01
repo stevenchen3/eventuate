@@ -16,7 +16,7 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.log.EventLogWriter
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog
@@ -38,48 +38,50 @@ object VertxEventbusAdapterSpec {
 class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbusAdapterSpec.Config))
   with WordSpecLike with MustMatchers with BeforeAndAfterAll with VertxEventbus with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb {
 
-  import TestExtensions._
-
   val logName = "logA"
+  val adapterId = "adapter1"
   var endpoint: ReplicationEndpoint = _
-  var eventBusProbe: TestProbe = _
+  var ebAddress = "vertx-eb-address"
+  var ebProbe: TestProbe = _
 
   override def config: Config = VertxEventbusAdapterSpec.Config
 
   override def beforeAll(): Unit = {
     super.beforeAll()
-    eventBusProbe = TestProbe()
     endpoint = new ReplicationEndpoint(id = "1", logNames = Set(logName), logFactory = logId => LeveldbEventLog.props(logId), connections = Set())
+  }
+
+  override protected def beforeEach(): Unit = {
+    super.beforeEach()
+    ebProbe = eventBusProbe(VertxEndpoint(ebAddress))
   }
 
   "A VertxEventbusAdapter" must {
     "read events from an inbound log and deliver them to the Vert.x service" in {
-      val vertxAdapter = VertxEventbusAdapter(AdapterConfig(LogAdapter.readFrom(logName).publish()), endpoint, vertx, actorStorageProvider())
-      val service = LogAdapterService(logName, vertx)
+      val vertxAdapter = VertxEventbusAdapter(AdapterConfig(LogAdapter.readFrom(logName, adapterId).publish(ebAddress)), endpoint, vertx, actorStorageProvider())
       val logWriter = new EventLogWriter("w1", endpoint.logs(logName))
-      val logStorageName = VertxEventbusAdapter.logId(logName, ReadLog)
+      val storageName = adapterId
 
-      service.onEvent((ev, sub) => eventBusProbe.ref.tell(ev, ActorRef.noSender))
       vertxAdapter.activate()
 
       val write1 = logWriter.write(Seq("event1")).await.head
 
-      storageProbe.expectMsg(read(logStorageName))
+      storageProbe.expectMsg(read(storageName))
       storageProbe.reply(0L)
 
-      storageProbe.expectMsg(write(logStorageName)(1))
+      storageProbe.expectMsg(write(storageName)(1))
       storageProbe.reply(1L)
 
-      eventBusProbe.expectMsgType[Event].id must be(write1.localSequenceNr)
+      ebProbe.expectVertxMsg(body = "event1")
 
       val write2 = logWriter.write(Seq("event2", "event3", "event4")).await
 
-      storageProbe.expectMsg(write(logStorageName)(2))
+      storageProbe.expectMsg(write(storageName)(2))
       storageProbe.reply(2L)
 
-      eventBusProbe.receiveN(3).asInstanceOf[Seq[Event]].map(_.id) must be(write2.map(_.localSequenceNr))
+      ebProbe.receiveNVertxMsg[String](3).map(_.body) must be(write2.map(_.payload))
 
-      storageProbe.expectMsg(write(logStorageName)(4))
+      storageProbe.expectMsg(write(storageName)(4))
       storageProbe.reply(4L)
     }
   }

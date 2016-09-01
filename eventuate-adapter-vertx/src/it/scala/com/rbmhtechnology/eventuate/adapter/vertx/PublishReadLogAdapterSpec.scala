@@ -22,7 +22,6 @@ import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
 import com.typesafe.config.ConfigFactory
 import org.scalatest._
 
-import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 
 object PublishReadLogAdapterSpec {
@@ -35,24 +34,22 @@ object PublishReadLogAdapterSpec {
 
 class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with ActorStorage with EventWriter
-  with VertxEventbus with ActorLogAdapterService {
-
-  import TestExtensions._
+  with VertxEventbus {
 
   val inboundLogId = "log_inbound"
-  var serviceProbe: TestProbe = _
+  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
-    serviceProbe = TestProbe()
 
     registerCodec()
-    logAdapter(logName)
-    notifyOnPublishEvent(serviceProbe.ref)
+    ebProbe = eventBusProbe(endpoint)
+    logAdapter()
   }
 
-  def logAdapter(logName: String): ActorRef =
-    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.publishAdapter(logName), vertx, actorStorageProvider()))
+  def logAdapter(): ActorRef =
+    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 
@@ -70,7 +67,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(50).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.map(_.localSequenceNr))
+      ebProbe.receiveNVertxMsg[String](50).map(_.body) must be(writtenEvents.map(_.payload))
     }
     "read and publish events from a stored sequence number" in {
       val writtenEvents = writeEvents("ev", 50)
@@ -83,7 +80,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(40).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.drop(10).map(_.localSequenceNr))
+      ebProbe.receiveNVertxMsg[String](40).map(_.body) must be(writtenEvents.drop(10).map(_.payload))
     }
     "read and publish events in batches" in {
       val writtenEvents = writeEvents("ev", 100)
@@ -99,7 +96,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(100).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.map(_.localSequenceNr))
+      ebProbe.receiveNVertxMsg[String](100).map(_.body) must be(writtenEvents.map(_.payload))
     }
   }
 }

@@ -28,5 +28,5 @@ trait EventWriter {
   def log: ActorRef
 
   def writeEvents(prefix: String, eventCount: Int = 100, start: Int = 1)(implicit system: ActorSystem): Seq[DurableEvent] =
-    new EventLogWriter("w1", log).write((start to eventCount).map(i => s"$prefix-$i")).await
+    new EventLogWriter("w1", log).write((start until eventCount + start).map(i => s"$prefix-$i")).await
 }
