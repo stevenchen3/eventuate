@@ -70,14 +70,14 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
       storageProbe.expectMsg(write(logStorageName)(1))
       storageProbe.reply(1L)
 
-      eventBusProbe.expectMsgType[Event] must be(write1.toEvent)
+      eventBusProbe.expectMsgType[Event].id must be(write1.localSequenceNr)
 
       val write2 = logWriter.write(Seq("event2", "event3", "event4")).await
 
       storageProbe.expectMsg(write(logStorageName)(2))
       storageProbe.reply(2L)
 
-      eventBusProbe.receiveN(3).asInstanceOf[Seq[Event]] must be(write2.map(_.toEvent))
+      eventBusProbe.receiveN(3).asInstanceOf[Seq[Event]].map(_.id) must be(write2.map(_.localSequenceNr))
 
       storageProbe.expectMsg(write(logStorageName)(4))
       storageProbe.reply(4L)

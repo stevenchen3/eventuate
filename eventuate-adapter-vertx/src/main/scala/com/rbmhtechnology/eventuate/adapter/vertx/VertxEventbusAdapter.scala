@@ -17,6 +17,7 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, ActorSystem, Props }
+import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
 import com.rbmhtechnology.eventuate.{ DurableEvent, ReplicationEndpoint }
@@ -80,7 +81,7 @@ class VertxEventbusAdapter(adapterConfig: AdapterConfig, replicationEndpoint: Re
       case SendReadLogAdapterDescriptor(n, c, Some(b)) => ???
 
       case ReliableReadLogAdapterDescriptor(n, c, d, None) =>
-        ReliableReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider, d)
+        ReliableBatchConfirmationReadLogAdapter.props(logId(n, ReadLog, Some(c)), log(n), LogAdapterInfo.sendAdapter(n, c), vertx, storageProvider, Options(d, 10))
 
       case ReliableReadLogAdapterDescriptor(n, c, d, Some(b)) => ???
 

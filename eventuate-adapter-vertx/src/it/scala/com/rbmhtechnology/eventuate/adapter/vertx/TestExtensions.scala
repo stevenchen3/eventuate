@@ -26,13 +26,14 @@ import scala.util.Failure
 object TestExtensions {
 
   implicit class DurableEventConverter(ev: DurableEvent) {
-    def toEvent: Event = new Event(ev.localSequenceNr, ev.payload)
+    // TODO
+    def toEvent: Event = new Event(null, ev.localSequenceNr, ev.payload)
   }
 
   implicit class RichTestProbe(probe: TestProbe) {
     def expectEvent(sequenceNr: Long, max: Duration = Duration.Undefined): Event = {
       probe.expectMsgPF[Event](max, hint = s"Event($sequenceNr, _)") {
-        case e@Event(id, payload) if id == sequenceNr => e
+        case e@Event(ev, id, payload) if id == sequenceNr => e
       }
     }
 

@@ -19,17 +19,18 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ActorRef, ActorSystem, Status}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
+import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class ReliableBatchConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
   with ActorStorage with EventWriter with VertxEventbus with ActorLogAdapterService {
 
   import TestExtensions._
 
-  val redeliverDelay = 1.seconds
+  val redeliverTimeout = 1.seconds
   val storageTimeout = 500.millis
   val inboundLogId = "log_inbound_confirm"
   var serviceProbe: TestProbe = _
@@ -39,20 +40,20 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
     serviceProbe = TestProbe()
 
     registerCodec()
-    logAdapter(logName, consumer)
     notifyOnConfirmableEvent(serviceProbe.ref)
   }
 
-  def logAdapter(logName: String, consumer: String): ActorRef =
-    system.actorOf(ReliableReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, actorStorageProvider(), redeliverDelay))
+  def logAdapter(batchSize: Int = 10): ActorRef =
+    system.actorOf(ReliableBatchConfirmationReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, actorStorageProvider(), Options(redeliverTimeout, batchSize)))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
-  "A ReliableReadLogAdapter" when {
+  "A ReliableBatchConfirmationReadLogAdapter" when {
     "reading events from an event log" must {
       "deliver events to a single consumer" in {
+        logAdapter()
         writeEvents("ev", 5)
 
         storageProbe.expectMsg(read)
@@ -65,6 +66,7 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
       "deliver events based on the replication progress" in {
+        logAdapter()
         writeEvents("ev", 5)
 
         storageProbe.expectMsg(read)
@@ -74,7 +76,8 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         serviceProbe.expectConfirmableEvent(sequenceNr = 4)
         serviceProbe.expectConfirmableEvent(sequenceNr = 5)
       }
-      "persist event confirmations if no gaps exist" in {
+      "persist event confirmations" in {
+        logAdapter()
         writeEvents("ev", 3)
 
         storageProbe.expectMsg(read)
@@ -82,87 +85,52 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         storageProbe.expectNoMsg(storageTimeout)
 
         serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
 
-        storageProbe.expectMsg(write(1))
+        storageProbe.expectMsg(write(3))
       }
-      "persist event confirmations only after gaps have been resolved" in {
+      "persist event confirmations in batches" in {
+        logAdapter(batchSize = 2)
         writeEvents("ev", 4)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
         storageProbe.expectNoMsg(storageTimeout)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-
-        storageProbe.expectNoMsg(storageTimeout)
-
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
-
-        storageProbe.expectMsg(write(3))
-        storageProbe.reply(3L)
-      }
-      "persist event confirmations once all events have been confirmed" in {
-        writeEvents("ev", 3)
-
-        storageProbe.expectMsg(read)
-        storageProbe.reply(0L)
-        storageProbe.expectNoMsg(storageTimeout)
-
-        val ev1 = serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        val ev2 = serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        val ev3 = serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-
-        ev3.confirm()
-        ev2.confirm()
-        ev1.confirm()
-
-        storageProbe.expectMsg(write(3))
-        storageProbe.reply(3L)
-      }
-      "persist event confirmations sequentially" in {
-        writeEvents("ev", 3)
-
-        storageProbe.expectMsg(read)
-        storageProbe.reply(0L)
-        storageProbe.expectNoMsg(storageTimeout)
-
         serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
         serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
-
-        storageProbe.expectMsg(write(1))
-        storageProbe.reply(1L)
 
         storageProbe.expectMsg(write(2))
         storageProbe.reply(2L)
 
-        storageProbe.expectMsg(write(3))
-        storageProbe.reply(3L)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+
+        storageProbe.expectMsg(write(4))
+        storageProbe.reply(2L)
       }
-      "redeliver all unconfirmed events" in {
-        writeEvents("ev", 2)
+      "persist event confirmations in batches of smaller size if no further events present" in {
+        logAdapter(batchSize = 2)
+        writeEvents("ev", 3)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
-
         storageProbe.expectNoMsg(storageTimeout)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        storageProbe.expectMsg(write(2))
+        storageProbe.reply(2L)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+
+        storageProbe.expectMsg(write(3))
+        storageProbe.reply(3L)
       }
-      "redeliver only unconfirmed events" in {
+      "redeliver whole batch if events are unconfirmed" in {
+        logAdapter()
         writeEvents("ev", 5)
 
         storageProbe.expectMsg(read)
@@ -172,48 +140,86 @@ class ReliableReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishRead
         serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
         serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
         serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
-
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
-      }
-      "redeliver only unconfirmed events while processing new events" in {
-        writeEvents("ev", 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5).confirm()
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
         serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
         serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+      }
+      "redeliver unconfirmed event batches while replaying events" in {
+        logAdapter(batchSize = 2)
+        writeEvents("ev", 4)
+
+        storageProbe.expectMsg(read)
+        storageProbe.reply(0L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+
+        storageProbe.expectMsg(write(2))
+        storageProbe.reply(2L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+
+        storageProbe.expectMsg(read)
+        storageProbe.reply(2L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
+      }
+      "redeliver unconfirmed event batches while processing new events" in {
+        logAdapter(batchSize = 2)
+        writeEvents("ev", 2)
+
+        storageProbe.expectMsg(read)
+        storageProbe.reply(0L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+
+        storageProbe.expectMsg(write(2))
+        storageProbe.reply(2L)
 
         writeEvents("ev", 2)
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
 
-        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 5)
+        storageProbe.expectMsg(write(3))
+        storageProbe.reply(3L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4)
+
+        storageProbe.expectMsg(read)
+        storageProbe.reply(3L)
+
+        serviceProbe.expectConfirmableEvent(sequenceNr = 4).confirm()
       }
     }
     "encountering a write failure" must {
       "restart and start at the last position" in {
+        logAdapter()
         writeEvents("ev", 3)
 
         storageProbe.expectMsg(read)
         storageProbe.reply(0L)
 
         serviceProbe.expectConfirmableEvent(sequenceNr = 1).confirm()
-        serviceProbe.expectConfirmableEvent(sequenceNr = 2)
-        serviceProbe.expectConfirmableEvent(sequenceNr = 3)
+        serviceProbe.expectConfirmableEvent(sequenceNr = 2).confirm()
+        serviceProbe.expectConfirmableEvent(sequenceNr = 3).confirm()
 
-        storageProbe.expectMsg(write(1))
+        storageProbe.expectMsg(write(3))
         storageProbe.reply(Status.Failure(new RuntimeException("err")))
 
         storageProbe.expectMsg(read)
-        storageProbe.reply(1L)
+        storageProbe.reply(0L)
 
+        serviceProbe.expectConfirmableEvent(sequenceNr = 1)
         serviceProbe.expectConfirmableEvent(sequenceNr = 2)
         serviceProbe.expectConfirmableEvent(sequenceNr = 3)
       }

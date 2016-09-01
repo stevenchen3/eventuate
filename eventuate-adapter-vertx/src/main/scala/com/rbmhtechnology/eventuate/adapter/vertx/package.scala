@@ -17,11 +17,12 @@
 package com.rbmhtechnology.eventuate.adapter
 
 import com.rbmhtechnology.eventuate.EventsourcedView
-import io.vertx.core.eventbus.DeliveryOptions
-import io.vertx.core._
+import io.vertx.core.eventbus.{ DeliveryOptions, Message, MessageProducer => VertxMessageProducer }
+import io.vertx.core.{ Future => VertxFuture, _ }
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 import rx.functions.Func1
 
+import scala.concurrent.{ ExecutionContext, Future, Promise }
 import scala.util.{ Failure, Success }
 
 package object vertx {
@@ -53,8 +54,20 @@ package object vertx {
 
     implicit class HandlerAsEventuateHandler[A](h: Handler[AsyncResult[A]]) {
       def asEventuateHandler: EventsourcedView.Handler[A] = {
-        case Success(res) => h.handle(Future.succeededFuture(res))
-        case Failure(err) => h.handle(Future.failedFuture(err))
+        case Success(res) => h.handle(VertxFuture.succeededFuture(res))
+        case Failure(err) => h.handle(VertxFuture.failedFuture(err))
+      }
+    }
+
+    implicit class PromiseToHandler[A](promise: Promise[A]) {
+      def asVertxHandler: Handler[AsyncResult[A]] = new Handler[AsyncResult[A]] {
+        override def handle(ar: AsyncResult[A]): Unit = {
+          if (ar.succeeded()) {
+            promise.success(ar.result())
+          } else {
+            promise.failure(ar.cause())
+          }
+        }
       }
     }
   }
@@ -69,6 +82,7 @@ package object vertx {
   }
 
   object VertxExtensions {
+    import VertxHandlerConverters._
 
     implicit class RichDeliveryOptions(o: DeliveryOptions) {
       def addHeader(header: HeaderValue): DeliveryOptions =
@@ -78,6 +92,14 @@ package object vertx {
     implicit class RichMultiMap(m: MultiMap) {
       def getHeaderValue(header: Header): Option[HeaderValue] =
         Option(m.get(header.name)).flatMap(header.valueByName)
+    }
+
+    implicit class RichMessageProducer[A](producer: VertxMessageProducer[A]) {
+      def sendFt[B](message: A)(implicit ec: ExecutionContext): Future[Message[B]] = {
+        val promise = Promise[Message[B]]()
+        producer.send(message, promise.asVertxHandler)
+        promise.future
+      }
     }
   }
 }

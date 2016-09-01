@@ -23,7 +23,7 @@ import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class ReliableSingleConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
   with VertxEventbus with ActorLogAdapterService {
 
@@ -43,9 +43,9 @@ class ReliableReadLogAdapterWithConfirmedDeliverySpec extends TestKit(ActorSyste
   }
 
   def logAdapter(logName: String, consumer: String): ActorRef =
-    system.actorOf(ReliableReadLogAdapterWithConfirmedDelivery.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, redeliverDelay))
+    system.actorOf(ReliableSingleConfirmationReadLogAdapter.props(inboundLogId, log, LogAdapterInfo.sendAdapter(logName, consumer), vertx, redeliverDelay))
 
-  "A ReliableReadLogAdapterWithConfirmedDelivery" when {
+  "A ReliableSingleConfirmationReadLogAdapter" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
         writeEvents("ev", 5)

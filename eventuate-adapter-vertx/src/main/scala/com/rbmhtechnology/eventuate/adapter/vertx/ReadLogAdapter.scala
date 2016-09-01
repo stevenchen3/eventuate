@@ -84,13 +84,8 @@ trait ReadLogAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery
   }
 
   override def onEvent: Receive = {
-    case event =>
-      events = events :+ lastHandledEvent
-      onDurableEvent(lastHandledEvent)
+    case event => events = events :+ lastHandledEvent
   }
-
-  def onDurableEvent(lastHandledEvent: DurableEvent): Unit =
-    ()
 
   override def write(): Future[W] = {
     val snr = lastSequenceNr

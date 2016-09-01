@@ -70,7 +70,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(50).asInstanceOf[Seq[Event]] must be(writtenEvents.map(_.toEvent))
+      serviceProbe.receiveN(50).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.map(_.localSequenceNr))
     }
     "read and publish events from a stored sequence number" in {
       val writtenEvents = writeEvents("ev", 50)
@@ -83,7 +83,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(40).asInstanceOf[Seq[Event]] must be(writtenEvents.drop(10).map(_.toEvent))
+      serviceProbe.receiveN(40).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.drop(10).map(_.localSequenceNr))
     }
     "read and publish events in batches" in {
       val writtenEvents = writeEvents("ev", 100)
@@ -99,7 +99,7 @@ class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadL
 
       storageProbe.expectNoMsg(1.second)
 
-      serviceProbe.receiveN(100).asInstanceOf[Seq[Event]] must be(writtenEvents.map(_.toEvent))
+      serviceProbe.receiveN(100).asInstanceOf[Seq[Event]].map(_.id) must be(writtenEvents.map(_.localSequenceNr))
     }
   }
 }

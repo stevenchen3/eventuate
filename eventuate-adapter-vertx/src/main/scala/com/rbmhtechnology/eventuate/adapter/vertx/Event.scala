@@ -22,19 +22,19 @@ import io.vertx.core.eventbus.{ Message, MessageConsumer }
 
 object Event {
   def apply(message: Message[DurableEvent]): Event =
-    new Event(message.body().localSequenceNr, message.body().payload)
+    new Event(message, message.body().localSequenceNr, message.body().payload)
 
   def withConfirmation(message: Message[DurableEvent], logAdapterInfo: SendLogAdapterInfo, vertx: Vertx): ConfirmableEvent =
-    new ConfirmableEvent(message.body().localSequenceNr, message.body().payload, logAdapterInfo, vertx)
+    new ConfirmableEvent(message, message.body().localSequenceNr, message.body().payload, logAdapterInfo, vertx)
 }
 
-case class Event(id: Long, payload: Any)
+case class Event(message: Message[DurableEvent], id: Long, payload: Any)
 
-class ConfirmableEvent private[vertx] (id: Long, payload: Any, private val logAdapterInfo: SendLogAdapterInfo, private val vertx: Vertx)
-  extends Event(id, payload) {
+class ConfirmableEvent private[vertx] (message: Message[DurableEvent], id: Long, payload: Any, private val logAdapterInfo: SendLogAdapterInfo, private val vertx: Vertx)
+  extends Event(message, id, payload) {
 
   def confirm(): Unit = {
-    vertx.eventBus().send(logAdapterInfo.readConfirmationAddress, id)
+    message.reply(null)
   }
 }
 
