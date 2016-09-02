@@ -20,32 +20,29 @@ import java.util.concurrent.TimeoutException
 
 import akka.actor.{ ActorRef, Props }
 import akka.pattern.after
-import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import io.vertx.core.Vertx
 
 import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 import scala.concurrent.{ ExecutionContext, Future }
 
-private[vertx] object ReliableBatchConfirmationReadLogAdapter {
+private[vertx] object VertxBatchConfirmationSendAdapter {
 
-  case class Options(redeliverTimeout: FiniteDuration, batchSize: Int)
-
-  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, storageProvider: StorageProvider, options: Options): Props =
-    Props(new ReliableBatchConfirmationReadLogAdapter(id, eventLog, endpoint, vertx, storageProvider, options))
+  def props(id: String, eventLog: ActorRef, endpointResolver: VertxEndpointResolver, vertx: Vertx, storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration): Props =
+    Props(new VertxBatchConfirmationSendAdapter(id, eventLog, endpointResolver, vertx, storageProvider, batchSize, confirmationTimeout))
 }
 
-private[vertx] class ReliableBatchConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, val storageProvider: StorageProvider, options: Options)
-  extends ReadLogAdapter[Long, Long] with MessageSender with SequenceNumberProgressStore {
+private[vertx] class VertxBatchConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointResolver: VertxEndpointResolver, val vertx: Vertx, val storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration)
+  extends VertxReadAdapter[Long, Long] with MessageSender with SequenceNumberProgressStore {
 
   import VertxExtensions._
 
-  override def replayBatchSize: Int = options.batchSize
+  override def replayBatchSize: Int = batchSize
 
   override def deliver(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {
     Future.firstCompletedOf(Seq(
       deliverEventsWithConfirmation(events),
-      timeoutFt(options.redeliverTimeout)))
+      timeoutFt(confirmationTimeout)))
   }
 
   def deliverEventsWithConfirmation(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {

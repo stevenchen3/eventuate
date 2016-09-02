@@ -19,36 +19,35 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ActorRef, ActorSystem, Status}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
-import com.rbmhtechnology.eventuate.adapter.vertx.ReliableBatchConfirmationReadLogAdapter.Options
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableBatchConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class VertxBatchConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
   with ActorStorage with EventWriter with VertxEventbus {
 
   val redeliverTimeout = 1.seconds
   val storageTimeout = 500.millis
   val inboundLogId = "log_inbound_confirm"
-  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  val endpoint = VertxEndpointResolver("vertx-eb-endpoint")
   var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
 
     registerCodec()
-    ebProbe = eventBusProbe(endpoint)
+    ebProbe = eventBusProbe(endpoint.address)
   }
 
   def logAdapter(batchSize: Int = 10): ActorRef =
-    system.actorOf(ReliableBatchConfirmationReadLogAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider(), Options(redeliverTimeout, batchSize)))
+    system.actorOf(VertxBatchConfirmationSendAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider(), batchSize, redeliverTimeout))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
-  "A ReliableBatchConfirmationReadLogAdapter" when {
+  "A VertxBatchConfirmationSendAdapter" when {
     "reading events from an event log" must {
       "deliver events to a single consumer" in {
         logAdapter()

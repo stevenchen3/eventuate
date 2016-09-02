@@ -18,7 +18,6 @@ package com.rbmhtechnology.example.vertx
 
 import java.io.File
 import java.nio.file.NoSuchFileException
-import java.time.Duration
 import java.util.UUID
 
 import akka.actor.{ActorRef, ActorSystem, Props}
@@ -38,7 +37,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.util.{Failure, Random, Success}
 
-object Logs {
+object LogNames {
   val logA = "log_S_A"
   val logB = "log_S_B"
 }
@@ -51,9 +50,7 @@ object Endpoints {
 
 object VertxAdapterExample extends App {
 
-  import Endpoints._
   import ExampleVertxExtensions._
-  import Logs._
 
   implicit val timeout = Timeout(5.minutes)
   implicit val system = ActorSystem(ReplicationConnection.DefaultRemoteSystemName)
@@ -61,27 +58,41 @@ object VertxAdapterExample extends App {
 
   import system.dispatcher
 
-  val endpoint = new ReplicationEndpoint(id = "id1", logNames = Set(logA, logB),
+  val endpoint = new ReplicationEndpoint(id = "id1", logNames = Set(LogNames.logA, LogNames.logB),
     logFactory = logId => LeveldbEventLog.props(logId), connections = Set())
 
-  val adapter = VertxEventbusAdapter(AdapterConfig(
-    LogAdapter.readFrom(logA, "logA-confirmed-adapter").sendTo(Processor).withConfirmedDelivery(Duration.ofSeconds(3), batchSize = 2),
-    LogAdapter.writeTo(logB, "logB-write-adapter", Writer),
-    LogAdapter.readFrom(logB, "logB-publish-adapter").publish(PublishReceiver)),
-    endpoint, vertx, new DiskStorageProvider("target/progress/vertx-scala", vertx))
+  val logA = endpoint.logs(LogNames.logA)
+  val logB = endpoint.logs(LogNames.logB)
+
+  val adapterSystem: VertxAdapterSystem = VertxAdapterSystem(VertxAdapterSystemConfig(
+    VertxAdapterConfig.fromLog(logA)
+      .sendTo { case _ => Endpoints.Processor }
+      .atLeastOnce(confirmationType = Batch(2), confirmationTimeout = 2.seconds)
+      .as("logA-processor"),
+    VertxAdapterConfig.fromEndpoints(Endpoints.Writer)
+      .writeTo(logB)
+      .as("logB-writer"),
+    VertxAdapterConfig.fromLog(logB)
+      .publishTo { case _ => Endpoints.PublishReceiver }
+      .as("logB-publisher")
+  ), vertx, new DiskStorageProvider("target/progress/vertx-scala", vertx))
 
   (for {
     _ <- vertx.deploy[ProcessorVerticle]()
     _ <- vertx.deploy[ReaderVerticle](new DeploymentOptions().setConfig(new JsonObject().put("name", "v_reader-1")))
     i <- vertx.deploy[ReaderVerticle](new DeploymentOptions().setConfig(new JsonObject().put("name", "v_reader-2")))
   } yield i).onComplete {
-    case Success(res) => adapter.activate()
-    case Failure(err) => println(s"Vert.x startup failed with $err")
+    case Success(res) =>
+      endpoint.activate()
+      adapterSystem.start()
+
+    case Failure(err) =>
+      println(s"Vert.x startup failed with $err")
   }
 
   val eventCount = 10
-  val writer = new EventLogWriter("writer", endpoint.logs(logA))
-  val reader = system.actorOf(Props(new EventLogReader("reader", endpoint.logs(logB), eventCount)))
+  val writer = new EventLogWriter("writer", logA)
+  val reader = system.actorOf(Props(new EventLogReader("reader", logB, eventCount)))
 
   val runId = UUID.randomUUID().toString.take(5)
   (1 to eventCount) map (i => s"event[$runId]-$i") foreach { event =>
@@ -98,6 +109,7 @@ object VertxAdapterExample extends App {
 }
 
 class ProcessorVerticle extends AbstractVerticle {
+
   import VertxHandlerConverters._
 
   val r = Random
@@ -132,6 +144,7 @@ class ProcessorVerticle extends AbstractVerticle {
 }
 
 class ReaderVerticle extends AbstractVerticle {
+
   import VertxHandlerConverters._
 
   override def start(): Unit = {
@@ -166,6 +179,7 @@ class EventLogReader(val id: String, val eventLog: ActorRef, val eventCount: Int
 }
 
 class DiskStorageProvider(path: String, vertx: Vertx)(implicit system: ActorSystem) extends StorageProvider {
+
   import ExampleVertxExtensions._
 
   new File(path).mkdirs()

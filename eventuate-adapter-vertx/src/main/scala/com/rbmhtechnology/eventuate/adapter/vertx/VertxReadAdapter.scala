@@ -24,17 +24,17 @@ import scala.concurrent.{ ExecutionContext, Future }
 
 trait MessageProducer {
   def vertx: Vertx
-  def endpoint: VertxEndpoint
+  def endpointResolver: VertxEndpointResolver
   def producer: VertxMessageProducer[Any]
 }
 
 trait MessagePublisher extends MessageProducer {
-  override lazy val producer = vertx.eventBus().publisher[Any](endpoint.address,
+  override lazy val producer = vertx.eventBus().publisher[Any](endpointResolver.address,
     new DeliveryOptions().setCodecName(AkkaSerializationMessageCodec.Name))
 }
 
 trait MessageSender extends MessageProducer {
-  override lazy val producer = vertx.eventBus().sender[Any](endpoint.address,
+  override lazy val producer = vertx.eventBus().sender[Any](endpointResolver.address,
     new DeliveryOptions().setCodecName(AkkaSerializationMessageCodec.Name))
 }
 
@@ -68,7 +68,7 @@ trait SequenceNumberProgressStore extends ProgressStore[Long, Long] {
     result
 }
 
-trait ReadLogAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery with ProgressStore[R, W] {
+trait VertxReadAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery with ProgressStore[R, W] {
   import context.dispatcher
 
   var events: Vector[DurableEvent] = Vector.empty

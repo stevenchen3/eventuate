@@ -24,7 +24,7 @@ import io.vertx.core.Vertx
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{ Failure, Success }
 
-private[vertx] object ReliableSingleConfirmationReadLogAdapter {
+private[vertx] object VertxSingleConfirmationSendAdapter {
 
   case class DeliverEvent(event: Any, deliveryId: String)
   case class Confirm(deliveryId: String)
@@ -33,14 +33,14 @@ private[vertx] object ReliableSingleConfirmationReadLogAdapter {
 
   case class DeliveryConfirmed()
 
-  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
-    Props(new ReliableSingleConfirmationReadLogAdapter(id, eventLog, endpoint, vertx, deliveryDelay))
+  def props(id: String, eventLog: ActorRef, endpointResolver: VertxEndpointResolver, vertx: Vertx, deliveryDelay: FiniteDuration): Props =
+    Props(new VertxSingleConfirmationSendAdapter(id, eventLog, endpointResolver, vertx, deliveryDelay))
 }
 
-private[vertx] class ReliableSingleConfirmationReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, deliveryDelay: FiniteDuration)
+private[vertx] class VertxSingleConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointResolver: VertxEndpointResolver, val vertx: Vertx, deliveryDelay: FiniteDuration)
   extends EventsourcedActor with MessageSender with ConfirmedDelivery {
 
-  import ReliableSingleConfirmationReadLogAdapter._
+  import VertxSingleConfirmationSendAdapter._
   import VertxExtensions._
   import context.dispatcher
 

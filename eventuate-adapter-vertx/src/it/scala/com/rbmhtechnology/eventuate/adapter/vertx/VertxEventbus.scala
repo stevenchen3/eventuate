@@ -47,10 +47,10 @@ trait VertxEventbus extends BeforeAndAfterEach {
     vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
   }
 
-  def eventBusProbe(endpoint: VertxEndpoint): TestProbe = {
+  def eventBusProbe(endpoint: String): TestProbe = {
     val probe = TestProbe()
     val handler = (m: Message[String]) => probe.ref ! VertxEventBusMessage(m.body(), m)
-    vertx.eventBus().consumer[String](endpoint.address, handler.asVertxHandler)
+    vertx.eventBus().consumer[String](endpoint, handler.asVertxHandler)
     probe
   }
 

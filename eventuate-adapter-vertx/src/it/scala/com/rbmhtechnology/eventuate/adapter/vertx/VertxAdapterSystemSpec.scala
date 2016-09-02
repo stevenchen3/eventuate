@@ -27,7 +27,7 @@ import org.scalatest.{BeforeAndAfterAll, MustMatchers, WordSpecLike}
 
 import scala.collection.immutable.Seq
 
-object VertxEventbusAdapterSpec {
+object VertxAdapterSystemSpec {
   val Config = ConfigFactory.defaultApplication()
     .withFallback(ConfigFactory.parseString(
       """
@@ -35,7 +35,7 @@ object VertxEventbusAdapterSpec {
       """.stripMargin))
 }
 
-class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbusAdapterSpec.Config))
+class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSystemSpec.Config))
   with WordSpecLike with MustMatchers with BeforeAndAfterAll with VertxEventbus with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb {
 
   val logName = "logA"
@@ -44,7 +44,7 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
   var ebAddress = "vertx-eb-address"
   var ebProbe: TestProbe = _
 
-  override def config: Config = VertxEventbusAdapterSpec.Config
+  override def config: Config = VertxAdapterSystemSpec.Config
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -53,16 +53,24 @@ class VertxEventbusAdapterSpec extends TestKit(ActorSystem("test", VertxEventbus
 
   override protected def beforeEach(): Unit = {
     super.beforeEach()
-    ebProbe = eventBusProbe(VertxEndpoint(ebAddress))
+    ebProbe = eventBusProbe(ebAddress)
   }
 
-  "A VertxEventbusAdapter" must {
-    "read events from an inbound log and deliver them to the Vert.x service" in {
-      val vertxAdapter = VertxEventbusAdapter(AdapterConfig(LogAdapter.readFrom(logName, adapterId).publish(ebAddress)), endpoint, vertx, actorStorageProvider())
+  "A VertxAdapterSystem" must {
+    "read events from an inbound log and deliver them to the Vert.x eventbus" in {
+      val log = endpoint.logs(logName)
+      val vertxAdapterSystem = VertxAdapterSystem(VertxAdapterSystemConfig(
+        VertxAdapterConfig.fromLog(log)
+            .publishTo {
+              case _ => ebAddress
+            }
+            .as("adapter1")
+      ), vertx, actorStorageProvider())
       val logWriter = new EventLogWriter("w1", endpoint.logs(logName))
       val storageName = adapterId
 
-      vertxAdapter.activate()
+      endpoint.activate()
+      vertxAdapterSystem.start()
 
       val write1 = logWriter.write(Seq("event1")).await.head
 

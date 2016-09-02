@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.eventuate.adapter.vertx
+package com.rbmhtechnology.eventuate.adapter.vertx.japi;
 
-case class VertxEndpoint(address: String)
+class BatchConfirmation implements ConfirmationType {
+  final int size;
+
+  BatchConfirmation(int size) {
+    this.size = size;
+  }
+}

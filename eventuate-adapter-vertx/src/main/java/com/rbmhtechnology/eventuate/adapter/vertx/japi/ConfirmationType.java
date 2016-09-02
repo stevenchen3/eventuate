@@ -14,20 +14,15 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.eventuate.adapter.vertx
+package com.rbmhtechnology.eventuate.adapter.vertx.japi;
 
-import akka.actor.{ Actor, Props }
+public interface ConfirmationType {
 
-import scala.collection.immutable.Seq
+  ConfirmationType Single = new SingleConfirmation();
 
-private[vertx] object LogAdapterSupervisor {
-  def props(logAdapters: Seq[Props]): Props =
-    Props(new LogAdapterSupervisor(logAdapters))
-}
-
-private[vertx] class LogAdapterSupervisor(logAdapters: Seq[Props]) extends Actor {
-
-  val logAdapterActors = logAdapters.map(context.actorOf)
-
-  override def receive: Receive = Actor.emptyBehavior
+  class Batch {
+    public static ConfirmationType withSize(int size) {
+      return new BatchConfirmation(size);
+    }
+  }
 }

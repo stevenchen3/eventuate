@@ -19,12 +19,12 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ ActorRef, Props }
 import io.vertx.core.Vertx
 
-private[eventuate] object PublishReadLogAdapter {
-  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new PublishReadLogAdapter(id, eventLog, endpoint, vertx, storageProvider))
+private[eventuate] object VertxSendAdapter {
+  def props(id: String, eventLog: ActorRef, endpointResolver: VertxEndpointResolver, vertx: Vertx, storageProvider: StorageProvider): Props =
+    Props(new VertxSendAdapter(id, eventLog, endpointResolver, vertx, storageProvider))
       .withDispatcher("eventuate.log.dispatchers.write-dispatcher")
 }
 
-private[eventuate] class PublishReadLogAdapter(val id: String, val eventLog: ActorRef, val endpoint: VertxEndpoint, val vertx: Vertx, val storageProvider: StorageProvider)
-  extends ReadLogAdapter[Long, Long] with UnboundDelivery with MessagePublisher with SequenceNumberProgressStore {
+private[eventuate] class VertxSendAdapter(val id: String, val eventLog: ActorRef, val endpointResolver: VertxEndpointResolver, val vertx: Vertx, val storageProvider: StorageProvider)
+  extends VertxReadAdapter[Long, Long] with UnboundDelivery with MessageSender with SequenceNumberProgressStore {
 }

@@ -24,7 +24,7 @@ import org.scalatest._
 
 import scala.concurrent.duration._
 
-object PublishReadLogAdapterSpec {
+object VertxPublishAdapterSpec {
   val Config = ConfigFactory.defaultApplication()
     .withFallback(ConfigFactory.parseString(
       """
@@ -32,30 +32,30 @@ object PublishReadLogAdapterSpec {
       """.stripMargin))
 }
 
-class PublishReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with ActorStorage with EventWriter
   with VertxEventbus {
 
   val inboundLogId = "log_inbound"
-  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  val endpoint = VertxEndpointResolver("vertx-eb-endpoint")
   var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
 
     registerCodec()
-    ebProbe = eventBusProbe(endpoint)
+    ebProbe = eventBusProbe(endpoint.address)
     logAdapter()
   }
 
   def logAdapter(): ActorRef =
-    system.actorOf(PublishReadLogAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider()))
+    system.actorOf(VertxPublishAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
-  "A PublishReadLogAdapter" must {
+  "A VertxPublishAdapter" must {
     "read and publish events from the beginning of the event log" in {
       val writtenEvents = writeEvents("ev", 50)
 

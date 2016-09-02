@@ -23,27 +23,27 @@ import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class ReliableSingleConfirmationReadLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class VertxSingleConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
   with VertxEventbus {
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"
-  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  val endpoint = VertxEndpointResolver("vertx-eb-endpoint")
   var ebProbe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
 
-    ebProbe = eventBusProbe(endpoint)
+    ebProbe = eventBusProbe(endpoint.address)
     registerCodec()
     logAdapter()
   }
 
   def logAdapter(): ActorRef =
-    system.actorOf(ReliableSingleConfirmationReadLogAdapter.props(inboundLogId, log, endpoint, vertx, redeliverDelay))
+    system.actorOf(VertxSingleConfirmationSendAdapter.props(inboundLogId, log, endpoint, vertx, redeliverDelay))
 
-  "A ReliableSingleConfirmationReadLogAdapter" when {
+  "A VertxSingleConfirmationSendAdapter" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
         writeEvents("e", 5)

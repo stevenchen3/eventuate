@@ -23,7 +23,10 @@ import akka.japi.pf.ReceiveBuilder;
 import com.rbmhtechnology.eventuate.AbstractEventsourcedView;
 import com.rbmhtechnology.eventuate.ApplicationVersion;
 import com.rbmhtechnology.eventuate.ReplicationEndpoint;
-import com.rbmhtechnology.eventuate.adapter.vertx.*;
+import com.rbmhtechnology.eventuate.adapter.vertx.VertxAdapterSystem;
+import com.rbmhtechnology.eventuate.adapter.vertx.VertxAdapterSystemConfig;
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.ConfirmationType;
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.VertxAdapterConfig;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.StorageProvider;
 import com.rbmhtechnology.eventuate.log.EventLogWriter;
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog;
@@ -32,6 +35,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava.core.AbstractVerticle;
 import io.vertx.rxjava.core.Vertx;
 import io.vertx.rxjava.core.buffer.Buffer;
+import io.vertx.rxjava.core.eventbus.Message;
+import javaslang.collection.HashSet;
 import javaslang.collection.List;
 import rx.Observable;
 import scala.collection.immutable.Map$;
@@ -41,6 +46,7 @@ import java.io.File;
 import java.time.Duration;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import static akka.pattern.Patterns.ask;
@@ -51,33 +57,53 @@ import static scala.compat.java8.JFunction.func;
 import static scala.compat.java8.JFunction.proc;
 
 public class VertxAdapterExample {
-  private static final String LOG_A = "log_Rx_A";
-  private static final String LOG_B = "log_Rx_B";
-  private static final String PROCESSOR = "processor-verticle";
+
+  private static class Endpoints {
+    static final String PROCESSOR = "eb-address:logA-processor";
+    static final String PUBLISH_RECEIVER = "eb-address:logB-publish-receiver";
+    static final String WRITER = "eb-address:logB-writer";
+  }
+
+  private static class LogNames {
+    static final String LOG_A = "log_Rx_A";
+    static final String LOG_B = "log_Rx_B";
+  }
+
   private static final int EVENT_COUNT = 10;
 
   public static void main(final String[] args) {
     final ActorSystem system = ActorSystem.create("location");
     final Vertx vertx = Vertx.vertx();
 
-    final ReplicationEndpoint endpoint = createReplicationEndpoint("id1", set(LOG_A, LOG_B),
+    final ReplicationEndpoint endpoint = createReplicationEndpoint("id1", set(LogNames.LOG_A, LogNames.LOG_B),
       (String logId) -> LeveldbEventLog.props(logId, "log", true), system);
+    final ActorRef logA = endpoint.logs().apply(LogNames.LOG_A);
+    final ActorRef logB = endpoint.logs().apply(LogNames.LOG_B);
 
-    final VertxEventbusAdapter adapter = VertxEventbusAdapter.create(AdapterConfig.of(
-//      LogAdapter.readFrom(LOG_A).sendTo(PROCESSOR).withConfirmedDelivery(Duration.ofSeconds(3)),
-//      LogAdapter.writeTo(LOG_B),
-//      LogAdapter.readFrom(LOG_B).publish()
-      ),
-      endpoint, vertx, new DiskStorageProvider("target/progress/vertx-rx-java", vertx), system);
+    final VertxAdapterSystem adapterSystem = VertxAdapterSystem.create(VertxAdapterSystemConfig.create(
+      VertxAdapterConfig.fromLog(logA)
+        .sendTo(Endpoints.PROCESSOR)
+        .atLeastOnce(ConfirmationType.Batch.withSize(2), Duration.ofSeconds(2))
+        .as("logA-processor"),
+      VertxAdapterConfig.fromEndpoints(Endpoints.WRITER)
+        .writeTo(logB)
+        .as("logB-writer"),
+      VertxAdapterConfig.fromLog(logB)
+        .publishTo(Endpoints.PUBLISH_RECEIVER)
+        .as("logB-publisher")
+    ), vertx, new DiskStorageProvider("target/progress/vertx-rx-java", vertx), system);
 
     deployVerticles(vertx).subscribe(
-      res -> adapter.activate(),
+      res -> {
+        endpoint.activate();
+        adapterSystem.start();
+      },
       err -> out.println(String.format("Vertx startup failed with %s", err))
     );
 
-    final EventLogWriter writer = new EventLogWriter("writer", endpoint.logs().apply(LOG_A), system);
+    final EventLogWriter writer = new EventLogWriter("writer", logA, system);
     final ActorRef reader = system.actorOf(Props.create(EventLogReader.class,
-      () -> new EventLogReader("reader", endpoint.logs().apply(LOG_B), EVENT_COUNT)));
+      () -> new EventLogReader("reader", logB, EVENT_COUNT)));
 
     final String runId = UUID.randomUUID().toString().substring(0, 5);
     for (int i = 1; i <= EVENT_COUNT; i++) {
@@ -101,37 +127,59 @@ public class VertxAdapterExample {
 
     @Override
     public void start() throws Exception {
-//      final LogAdapterService<ConfirmableEvent> readService = LogAdapterService.create(LOG_A, PROCESSOR, vertx);
-//      final LogAdapterService<Event> writeService = LogAdapterService.create(LOG_B, vertx);
-
-//      readService.onEvent()
-//        .filter(this::shouldPass)
-//        .doOnNext(ev -> out.println(String.format("[v_processor] processed [%s]", ev.payload())))
-//        .flatMap(ev -> writeService.persist("*processed*" + ev.payload()).map(x -> ev))
-//        .subscribe(
-//          ConfirmableEvent::confirm,
-//          err -> out.println(String.format("[verticle] persist failed with: %s", err.getMessage()))
-//        );
+      vertx.eventBus().<String>consumer(Endpoints.PROCESSOR).toObservable()
+        .filter(this::shouldPass)
+        .compose(executeIdempotent(this::persist))
+        .subscribe(
+          m -> m.reply(null),
+          err -> out.println(String.format("[verticle] persist failed with: %s", err.getMessage()))
+        );
     }
 
-//    private Boolean shouldPass(final ConfirmableEvent ev) {
-//      if (r.nextFloat() < 0.4) {
-//        out.println(String.format("[v_processor] dropped   [%s]", ev.payload()));
-//        return false;
-//      }
-//      return true;
-//    }
+    private <T> Boolean shouldPass(final Message<T> m) {
+      if (r.nextFloat() < 0.4) {
+        out.println(String.format("[v_processor] dropped   [%s]", m.body()));
+        return false;
+      }
+      return true;
+    }
+
+    private Observable<Message<String>> persist(final Message<String> m) {
+      out.println(String.format("[v_processor] processed [%s]", m.body()));
+      return vertx.eventBus().<String>sendObservable(Endpoints.WRITER, "*processed*" + m.body())
+        .map(x -> m);
+    }
+
+    private <T> Observable.Transformer<Message<T>, Message<T>> executeIdempotent(final Function<Message<T>, Observable<Message<T>>> f) {
+      final AtomicReference<javaslang.collection.Set<T>> processing = new AtomicReference<>(HashSet.empty());
+      final AtomicReference<javaslang.collection.Set<T>> processed = new AtomicReference<>(HashSet.empty());
+
+      return obs -> obs.flatMap(m -> {
+        if (processed.get().contains(m.body())) {
+          return Observable.just(m);
+        } else if (processing.get().contains(m.body())) {
+          return Observable.empty();
+        }
+
+        processing.getAndUpdate(p -> p.add(m.body()));
+        return f.apply(m)
+          .doOnNext(e -> {
+            processing.getAndUpdate(p -> p.remove(m.body()));
+            processed.getAndUpdate(p -> p.add(m.body()));
+          })
+          .doOnError(e -> processing.getAndUpdate(p -> p.remove(m.body())))
+          .onErrorResumeNext(err -> Observable.empty());
+      });
+    }
   }
 
   public static class ReaderVerticle extends AbstractVerticle {
     @Override
     public void start() throws Exception {
-//      final LogAdapterService readService = LogAdapterService.create(LOG_B, vertx);
-
-//      readService.onEvent()
-//        .subscribe(
-//          ev -> out.println(String.format("[%s]  received  [%s]", config().getString("name"), ev.payload()))
-//        );
+      vertx.eventBus().<String>consumer(Endpoints.PUBLISH_RECEIVER).toObservable()
+        .subscribe(
+          m -> out.println(String.format("[%s]  received  [%s]", config().getString("name"), m.body()))
+        );
     }
   }
 

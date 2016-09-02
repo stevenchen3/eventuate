@@ -16,15 +16,18 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import scala.concurrent.duration.FiniteDuration
+import akka.actor.{ Actor, Props }
 
-sealed trait LogAdapterDescriptor {
-  def id: String
-  def logName: String
-  def endpoint: VertxEndpoint
+import scala.collection.immutable.Seq
+
+private[vertx] object VertxAdapterSupervisor {
+  def props(logAdapters: Seq[Props]): Props =
+    Props(new VertxAdapterSupervisor(logAdapters))
 }
 
-case class PublishReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor
-case class SendReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor
-case class ReliableReadLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint, redeliverDelay: FiniteDuration, batchSize: Int) extends LogAdapterDescriptor
-case class WriteLogAdapterDescriptor(id: String, logName: String, endpoint: VertxEndpoint) extends LogAdapterDescriptor
+private[vertx] class VertxAdapterSupervisor(logAdapters: Seq[Props]) extends Actor {
+
+  val logAdapterActors = logAdapters.map(context.actorOf)
+
+  override def receive: Receive = Actor.emptyBehavior
+}

@@ -23,19 +23,19 @@ import io.vertx.core.{ Vertx, Handler => VertxHandler }
 
 import scala.util.{ Failure, Success }
 
-private[vertx] object WriteLogAdapter {
+private[vertx] object VertxWriteAdapter {
 
   case class PersistEvent(event: Any, message: Message[Any])
 
-  def props(id: String, eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx): Props =
-    Props(new WriteLogAdapter(id, eventLog, endpoint, vertx))
+  def props(id: String, eventLog: ActorRef, endpoint: String, vertx: Vertx): Props =
+    Props(new VertxWriteAdapter(id, eventLog, endpoint, vertx))
 }
 
-private[vertx] class WriteLogAdapter(val id: String, val eventLog: ActorRef, endpoint: VertxEndpoint, vertx: Vertx) extends EventsourcedActor {
+private[vertx] class VertxWriteAdapter(val id: String, val eventLog: ActorRef, endpoint: String, vertx: Vertx) extends EventsourcedActor {
 
-  import WriteLogAdapter._
+  import VertxWriteAdapter._
 
-  var messageConsumer = vertx.eventBus().localConsumer[Any](endpoint.address, new VertxHandler[Message[Any]] {
+  var messageConsumer = vertx.eventBus().localConsumer[Any](endpoint, new VertxHandler[Message[Any]] {
     override def handle(message: Message[Any]): Unit = {
       self ! PersistEvent(message.body(), message)
     }

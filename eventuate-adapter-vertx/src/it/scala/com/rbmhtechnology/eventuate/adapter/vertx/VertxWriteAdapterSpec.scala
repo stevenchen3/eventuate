@@ -28,7 +28,7 @@ import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
-object WriteLogAdapterSpec {
+object VertxWriteAdapterSpec {
 
   class LogReader(val id: String, val eventLog: ActorRef, receiver: ActorRef) extends EventsourcedView {
     override def onCommand: Receive = {
@@ -51,13 +51,13 @@ object WriteLogAdapterSpec {
   }
 }
 
-class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdapterSpec.Config))
+class VertxWriteAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEventbus {
 
   import VertxHandlerConverters._
-  import WriteLogAdapterSpec._
+  import VertxWriteAdapterSpec._
 
-  val endpoint = VertxEndpoint("vertx-eb-endpoint")
+  val endpoint = "vertx-eb-endpoint"
   var resultProbe: TestProbe = _
   var logProbe: TestProbe = _
   var persist: (Any) => Unit = _
@@ -81,7 +81,7 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
     system.actorOf(Props(new LogReader("r", log, receiver)))
 
   def writeLogAdapter(eventLog: ActorRef = log): ActorRef = {
-    val actor = system.actorOf(WriteLogAdapter.props("write-log-adapter", eventLog, endpoint, vertx))
+    val actor = system.actorOf(VertxWriteAdapter.props("write-log-adapter", eventLog, endpoint, vertx))
     waitForStartup()
     actor
   }
@@ -90,8 +90,8 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
     system.actorOf(Props(new FailingWriteLog(log, failureEvents)))
   }
 
-  def createPersist(eventNotifier: ActorRef, endpoint: VertxEndpoint): (Any) => Unit = {
-    (event: Any) => vertx.eventBus().send[Any](endpoint.address, event, {(ar: AsyncResult[Message[Any]]) =>
+  def createPersist(eventNotifier: ActorRef, endpoint: String): (Any) => Unit = {
+    (event: Any) => vertx.eventBus().send[Any](endpoint, event, {(ar: AsyncResult[Message[Any]]) =>
       if (ar.succeeded()) {
         eventNotifier ! Success(ar.result().body)
       } else {
@@ -100,7 +100,7 @@ class WriteLogAdapterSpec extends TestKit(ActorSystem("test", PublishReadLogAdap
     }.asVertxHandler)
   }
 
-  "A WriteLogAdapter" when {
+  "A VertxWriteAdapter" when {
     "receiving events" must {
       "persist events in the event log" in {
         val actor = writeLogAdapter()
