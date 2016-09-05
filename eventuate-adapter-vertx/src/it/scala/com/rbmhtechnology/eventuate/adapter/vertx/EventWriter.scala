@@ -29,4 +29,10 @@ trait EventWriter {
 
   def writeEvents(prefix: String, eventCount: Int = 100, start: Int = 1)(implicit system: ActorSystem): Seq[DurableEvent] =
     new EventLogWriter("w1", log).write((start until eventCount + start).map(i => s"$prefix-$i")).await
+
+  def isEvenEvent(ev: String, prefix: String): Boolean =
+    Integer.valueOf(ev.replace(prefix, "")) % 2 == 0
+
+  def isOddEvent(ev: String, prefix: String): Boolean =
+    !isEvenEvent(ev, prefix)
 }

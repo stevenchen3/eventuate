@@ -29,7 +29,7 @@ trait ActorStorage extends BeforeAndAfterEach {
 
   var storageProbe: TestProbe = _
 
-  override protected def beforeEach(): Unit = {
+  override def beforeEach(): Unit = {
     super.beforeEach()
 
     storageProbe = TestProbe()

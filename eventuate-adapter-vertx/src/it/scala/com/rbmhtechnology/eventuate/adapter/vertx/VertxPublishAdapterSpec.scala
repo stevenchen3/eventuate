@@ -37,26 +37,17 @@ class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAd
   with VertxEventbus {
 
   val inboundLogId = "log_inbound"
-  val endpoint = VertxEndpointResolver("vertx-eb-endpoint")
-  var ebProbe: TestProbe = _
 
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-
-    registerCodec()
-    ebProbe = eventBusProbe(endpoint.address)
-    logAdapter()
-  }
-
-  def logAdapter(): ActorRef =
-    system.actorOf(VertxPublishAdapter.props(inboundLogId, log, endpoint, vertx, actorStorageProvider()))
+  def startLogAdapter(endpointRouter: VertxEndpointRouter): ActorRef =
+    system.actorOf(VertxPublishAdapter.props(inboundLogId, log, endpointRouter, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
   "A VertxPublishAdapter" must {
-    "read and publish events from the beginning of the event log" in {
+    "publish events from the beginning of the event log" in {
+      startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
       val writtenEvents = writeEvents("ev", 50)
 
       storageProbe.expectMsg(read)
@@ -67,9 +58,10 @@ class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAd
 
       storageProbe.expectNoMsg(1.second)
 
-      ebProbe.receiveNVertxMsg[String](50).map(_.body) must be(writtenEvents.map(_.payload))
+      endpoint1Probe.receiveNVertxMsg[String](50).map(_.body) must be(writtenEvents.map(_.payload))
     }
-    "read and publish events from a stored sequence number" in {
+    "publish events from a stored sequence number" in {
+      startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
       val writtenEvents = writeEvents("ev", 50)
 
       storageProbe.expectMsg(read)
@@ -80,9 +72,10 @@ class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAd
 
       storageProbe.expectNoMsg(1.second)
 
-      ebProbe.receiveNVertxMsg[String](40).map(_.body) must be(writtenEvents.drop(10).map(_.payload))
+      endpoint1Probe.receiveNVertxMsg[String](40).map(_.body) must be(writtenEvents.drop(10).map(_.payload))
     }
-    "read and publish events in batches" in {
+    "publish events in batches" in {
+      startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
       val writtenEvents = writeEvents("ev", 100)
 
       storageProbe.expectMsg(read)
@@ -96,7 +89,84 @@ class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAd
 
       storageProbe.expectNoMsg(1.second)
 
-      ebProbe.receiveNVertxMsg[String](100).map(_.body) must be(writtenEvents.map(_.payload))
+      endpoint1Probe.receiveNVertxMsg[String](100).map(_.body) must be(writtenEvents.map(_.payload))
+    }
+    "publish events to multiple consumers" in {
+      val otherConsumer = eventBusProbe(endpoint1)
+
+      startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
+      val writtenEvents = writeEvents("e", 3)
+
+      storageProbe.expectMsg(read)
+      storageProbe.reply(0L)
+
+      endpoint1Probe.expectVertxMsg(body = "e-1")
+      endpoint1Probe.expectVertxMsg(body = "e-2")
+      endpoint1Probe.expectVertxMsg(body = "e-3")
+
+      otherConsumer.expectVertxMsg(body = "e-1")
+      otherConsumer.expectVertxMsg(body = "e-2")
+      otherConsumer.expectVertxMsg(body = "e-3")
+
+      storageProbe.expectMsg(write(3))
+      storageProbe.reply(3L)
+    }
+    "publish selected events only" in {
+      startLogAdapter(VertxEndpointRouter.route {
+        case ev: String if isOddEvent(ev, "e") => endpoint1
+      })
+      writeEvents("e", 10)
+
+      storageProbe.expectMsg(read)
+      storageProbe.reply(0L)
+
+      endpoint1Probe.expectVertxMsg(body = "e-1")
+      endpoint1Probe.expectVertxMsg(body = "e-3")
+      endpoint1Probe.expectVertxMsg(body = "e-5")
+      endpoint1Probe.expectVertxMsg(body = "e-7")
+      endpoint1Probe.expectVertxMsg(body = "e-9")
+
+      storageProbe.expectMsg(write(10))
+      storageProbe.reply(10L)
+    }
+    "route events to different endpoints" in {
+      startLogAdapter(VertxEndpointRouter.route {
+        case ev: String if isEvenEvent(ev, "e") => endpoint1
+        case ev: String if isOddEvent(ev, "e") => endpoint2
+      })
+      writeEvents("e", 10)
+
+      storageProbe.expectMsg(read)
+      storageProbe.reply(0L)
+
+      endpoint1Probe.expectVertxMsg(body = "e-2")
+      endpoint1Probe.expectVertxMsg(body = "e-4")
+      endpoint1Probe.expectVertxMsg(body = "e-6")
+      endpoint1Probe.expectVertxMsg(body = "e-8")
+      endpoint1Probe.expectVertxMsg(body = "e-10")
+
+      endpoint2Probe.expectVertxMsg(body = "e-1")
+      endpoint2Probe.expectVertxMsg(body = "e-3")
+      endpoint2Probe.expectVertxMsg(body = "e-5")
+      endpoint2Probe.expectVertxMsg(body = "e-7")
+      endpoint2Probe.expectVertxMsg(body = "e-9")
+
+      storageProbe.expectMsg(write(10))
+      storageProbe.reply(10L)
+    }
+    "deliver no events if the routing does not match" in {
+      startLogAdapter(VertxEndpointRouter.route {
+        case "i-will-never-match" => endpoint1
+      })
+      writeEvents("e", 10)
+
+      storageProbe.expectMsg(read)
+      storageProbe.reply(0L)
+
+      endpoint1Probe.expectNoMsg(1.second)
+
+      storageProbe.expectMsg(write(10))
+      storageProbe.reply(10L)
     }
   }
 }

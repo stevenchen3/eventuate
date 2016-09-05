@@ -16,39 +16,19 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import java.util.concurrent.TimeoutException
-
 import akka.actor.{ ActorRef, Props }
-import akka.pattern.after
 import io.vertx.core.Vertx
 
-import scala.collection.immutable.Seq
 import scala.concurrent.duration._
-import scala.concurrent.{ ExecutionContext, Future }
 
 private[vertx] object VertxBatchConfirmationSendAdapter {
 
-  def props(id: String, eventLog: ActorRef, endpointResolver: VertxEndpointResolver, vertx: Vertx, storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration): Props =
-    Props(new VertxBatchConfirmationSendAdapter(id, eventLog, endpointResolver, vertx, storageProvider, batchSize, confirmationTimeout))
+  def props(id: String, eventLog: ActorRef, endpointRouter: VertxEndpointRouter, vertx: Vertx, storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration): Props =
+    Props(new VertxBatchConfirmationSendAdapter(id, eventLog, endpointRouter, vertx, storageProvider, batchSize, confirmationTimeout))
 }
 
-private[vertx] class VertxBatchConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointResolver: VertxEndpointResolver, val vertx: Vertx, val storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration)
-  extends VertxReadAdapter[Long, Long] with MessageSender with SequenceNumberProgressStore {
-
-  import VertxExtensions._
+private[vertx] class VertxBatchConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, val storageProvider: StorageProvider, batchSize: Int, val confirmationTimeout: FiniteDuration)
+  extends VertxReadAdapter[Long, Long] with AtLeastOnceDelivery with MessageSender with SequenceNumberProgressStore {
 
   override def replayBatchSize: Int = batchSize
-
-  override def deliver(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {
-    Future.firstCompletedOf(Seq(
-      deliverEventsWithConfirmation(events),
-      timeoutFt(confirmationTimeout)))
-  }
-
-  def deliverEventsWithConfirmation(events: Vector[Any])(implicit ec: ExecutionContext): Future[Unit] = {
-    Future.sequence(events.map(producer.sendFt[Unit](_))).map(_ => Unit)
-  }
-
-  private def timeoutFt(delay: FiniteDuration)(implicit ec: ExecutionContext): Future[Unit] =
-    after(delay, context.system.scheduler)(Future.failed(new TimeoutException(s"Delivery timeout of $delay reached.")))
 }

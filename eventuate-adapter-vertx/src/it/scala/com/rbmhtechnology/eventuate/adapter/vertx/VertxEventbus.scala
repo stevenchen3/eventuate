@@ -36,11 +36,28 @@ trait VertxEventbus extends BeforeAndAfterEach {
     }
   }
 
-  var vertx: Vertx = _
+  val registerEventBusCodec = true
 
-  override protected def beforeEach(): Unit = {
+  val endpoint1 = "vertx-endpoint1"
+  val endpoint2 = "vertx-endpoint2"
+  val endpoint3 = "vertx-endpoint3"
+
+  var vertx: Vertx = _
+  var endpoint1Probe: TestProbe = _
+  var endpoint2Probe: TestProbe = _
+  var endpoint3Probe: TestProbe = _
+
+  override def beforeEach(): Unit = {
     super.beforeEach()
     vertx = Vertx.vertx()
+
+    if (registerEventBusCodec) {
+      registerCodec()
+    }
+
+    endpoint1Probe = eventBusProbe(endpoint1)
+    endpoint2Probe = eventBusProbe(endpoint2)
+    endpoint3Probe = eventBusProbe(endpoint3)
   }
 
   def registerCodec(): Unit = {

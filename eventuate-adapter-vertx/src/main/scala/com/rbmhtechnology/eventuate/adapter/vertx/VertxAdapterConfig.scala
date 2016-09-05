@@ -26,9 +26,9 @@ sealed trait VertxAdapterConfig {
   def log: ActorRef
 }
 
-case class VertxPublishAdapterConfig(id: String, log: ActorRef, endpoints: VertxEndpointResolver) extends VertxAdapterConfig
-case class VertxSendAdapterConfig(id: String, log: ActorRef, endpoints: VertxEndpointResolver, deliveryMode: DeliveryMode) extends VertxAdapterConfig
-case class VertxWriteAdapterConfig(id: String, log: ActorRef, endpoints: Seq[String], filter: PartialFunction[Any, Boolean]) extends VertxAdapterConfig
+case class VertxPublishAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter) extends VertxAdapterConfig
+case class VertxSendAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter, deliveryMode: DeliveryMode) extends VertxAdapterConfig
+case class VertxWriteAdapterConfig(id: String, log: ActorRef, endpointRouter: Seq[String], filter: PartialFunction[Any, Boolean]) extends VertxAdapterConfig
 
 sealed trait ConfirmationType {}
 case object Single extends ConfirmationType
@@ -38,25 +38,17 @@ sealed trait DeliveryMode {}
 case object AtMostOnce extends DeliveryMode
 case class AtLeastOnce(confirmationType: ConfirmationType, confirmationTimeout: FiniteDuration) extends DeliveryMode
 
-object VertxEndpointResolver {
+object VertxEndpointRouter {
 
-  def apply(f: PartialFunction[Any, String]): VertxEndpointResolver =
-    new VertxEndpointResolver(f)
+  def route(f: PartialFunction[Any, String]): VertxEndpointRouter =
+    new VertxEndpointRouter(f)
 
-  def apply(s: String): VertxEndpointResolver =
-    new VertxEndpointResolver({ case _ => s })
+  def routeAllTo(s: String): VertxEndpointRouter =
+    new VertxEndpointRouter({ case _ => s })
 }
 
-class VertxEndpointResolver(f: PartialFunction[Any, String]) {
-  def hasEndpoint(v: Any): Boolean =
-    f.isDefinedAt(v)
-
-  def endpoint(v: Any): String =
-    f(v)
-
-  // TODO: remove
-  def address: String =
-    f(Unit)
+class VertxEndpointRouter(f: PartialFunction[Any, String]) {
+  val endpoint: Any => Option[String] = f.lift
 }
 
 object VertxAdapterConfig {
@@ -74,28 +66,28 @@ trait CompletableVertxAdapterConfigFactory {
 
 class VertxReadAdapterConfigFactory(log: ActorRef) {
 
-  def publishTo(endpoints: PartialFunction[Any, String]): VertxPublishAdapterConfigFactory =
-    new VertxPublishAdapterConfigFactory(log, VertxEndpointResolver(endpoints))
+  def publishTo(routes: PartialFunction[Any, String]): VertxPublishAdapterConfigFactory =
+    new VertxPublishAdapterConfigFactory(log, VertxEndpointRouter.route(routes))
 
-  def sendTo(endpoints: PartialFunction[Any, String]): VertxSendAdapterConfigFactory =
-    new VertxSendAdapterConfigFactory(log, VertxEndpointResolver(endpoints))
+  def sendTo(routes: PartialFunction[Any, String]): VertxSendAdapterConfigFactory =
+    new VertxSendAdapterConfigFactory(log, VertxEndpointRouter.route(routes))
 }
 
-class VertxPublishAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointResolver)
+class VertxPublishAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointRouter)
   extends CompletableVertxAdapterConfigFactory {
 
   override def as(id: String): VertxAdapterConfig =
     VertxPublishAdapterConfig(id, log, endpoints)
 }
 
-class VertxSendAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointResolver, deliveryMode: DeliveryMode = AtMostOnce)
+class VertxSendAdapterConfigFactory(log: ActorRef, endpointRouter: VertxEndpointRouter, deliveryMode: DeliveryMode = AtMostOnce)
   extends CompletableVertxAdapterConfigFactory {
 
   def atLeastOnce(confirmationType: ConfirmationType, confirmationTimeout: FiniteDuration): VertxSendAdapterConfigFactory =
-    new VertxSendAdapterConfigFactory(log, endpoints, AtLeastOnce(confirmationType, confirmationTimeout))
+    new VertxSendAdapterConfigFactory(log, endpointRouter, AtLeastOnce(confirmationType, confirmationTimeout))
 
   override def as(id: String): VertxAdapterConfig =
-    VertxSendAdapterConfig(id, log, endpoints, deliveryMode)
+    VertxSendAdapterConfig(id, log, endpointRouter, deliveryMode)
 }
 
 class VertxWriteAdapterConfigFactory(endpoints: Seq[String]) {

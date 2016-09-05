@@ -41,19 +41,13 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
   val logName = "logA"
   val adapterId = "adapter1"
   var endpoint: ReplicationEndpoint = _
-  var ebAddress = "vertx-eb-address"
-  var ebProbe: TestProbe = _
 
   override def config: Config = VertxAdapterSystemSpec.Config
+  override val registerEventBusCodec: Boolean = false
 
   override def beforeAll(): Unit = {
     super.beforeAll()
     endpoint = new ReplicationEndpoint(id = "1", logNames = Set(logName), logFactory = logId => LeveldbEventLog.props(logId), connections = Set())
-  }
-
-  override protected def beforeEach(): Unit = {
-    super.beforeEach()
-    ebProbe = eventBusProbe(ebAddress)
   }
 
   "A VertxAdapterSystem" must {
@@ -62,7 +56,7 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
       val vertxAdapterSystem = VertxAdapterSystem(VertxAdapterSystemConfig(
         VertxAdapterConfig.fromLog(log)
             .publishTo {
-              case _ => ebAddress
+              case _ => endpoint1
             }
             .as("adapter1")
       ), vertx, actorStorageProvider())
@@ -80,14 +74,14 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
       storageProbe.expectMsg(write(storageName)(1))
       storageProbe.reply(1L)
 
-      ebProbe.expectVertxMsg(body = "event1")
+      endpoint1Probe.expectVertxMsg(body = "event1")
 
       val write2 = logWriter.write(Seq("event2", "event3", "event4")).await
 
       storageProbe.expectMsg(write(storageName)(2))
       storageProbe.reply(2L)
 
-      ebProbe.receiveNVertxMsg[String](3).map(_.body) must be(write2.map(_.payload))
+      endpoint1Probe.receiveNVertxMsg[String](3).map(_.body) must be(write2.map(_.payload))
 
       storageProbe.expectMsg(write(storageName)(4))
       storageProbe.reply(4L)

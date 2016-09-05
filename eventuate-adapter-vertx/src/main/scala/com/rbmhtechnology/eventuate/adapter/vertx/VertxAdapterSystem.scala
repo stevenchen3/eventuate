@@ -56,17 +56,17 @@ class VertxAdapterSystem(config: VertxAdapterSystemConfig, vertx: Vertx, storage
 
   private def adapters: Seq[Props] = {
     config.adapterConfigs.map {
-      case VertxPublishAdapterConfig(id, log, endpointResolver) =>
-        VertxPublishAdapter.props(id, log, endpointResolver, vertx, storageProvider)
+      case VertxPublishAdapterConfig(id, log, endpointRouter) =>
+        VertxPublishAdapter.props(id, log, endpointRouter, vertx, storageProvider)
 
-      case VertxSendAdapterConfig(id, log, endpointResolver, AtMostOnce) =>
-        VertxSendAdapter.props(id, log, endpointResolver, vertx, storageProvider)
+      case VertxSendAdapterConfig(id, log, endpointRouter, AtMostOnce) =>
+        VertxSendAdapter.props(id, log, endpointRouter, vertx, storageProvider)
 
-      case VertxSendAdapterConfig(id, log, endpointResolver, AtLeastOnce(Single, timeout)) =>
-        VertxSingleConfirmationSendAdapter.props(id, log, endpointResolver, vertx, timeout)
+      case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Single, timeout)) =>
+        VertxSingleConfirmationSendAdapter.props(id, log, endpointRouter, vertx, timeout)
 
-      case VertxSendAdapterConfig(id, log, endpointResolver, AtLeastOnce(Batch(size), timeout)) =>
-        VertxBatchConfirmationSendAdapter.props(id, log, endpointResolver, vertx, storageProvider, size, timeout)
+      case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Batch(size), timeout)) =>
+        VertxBatchConfirmationSendAdapter.props(id, log, endpointRouter, vertx, storageProvider, size, timeout)
 
       case VertxWriteAdapterConfig(id, log, endpoints, filter) =>
         VertxWriteAdapter.props(id, log, endpoints.head, vertx)

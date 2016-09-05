@@ -49,19 +49,19 @@ class VertxReadAdapterConfigFactory(log: ActorRef) {
   import JavaConfigConverters._
 
   def publishTo(endpoint: String): VertxPublishAdapterConfigFactory =
-    new VertxPublishAdapterConfigFactory(log, new VertxEndpointResolver(endpoint.asPF))
+    new VertxPublishAdapterConfigFactory(log, new VertxEndpointRouter(endpoint.asPF))
 
-  def publishTo(endpoints: JFunction[Any, JOption[String]]): VertxPublishAdapterConfigFactory =
-    new VertxPublishAdapterConfigFactory(log, new VertxEndpointResolver(endpoints.asScala))
+  def publishTo(routes: JFunction[Any, JOption[String]]): VertxPublishAdapterConfigFactory =
+    new VertxPublishAdapterConfigFactory(log, new VertxEndpointRouter(routes.asScala))
 
   def sendTo(endpoint: String): VertxSendAdapterConfigFactory =
-    new VertxSendAdapterConfigFactory(log, new VertxEndpointResolver(endpoint.asPF))
+    new VertxSendAdapterConfigFactory(log, new VertxEndpointRouter(endpoint.asPF))
 
-  def sendTo(endpoints: JFunction[Any, JOption[String]]): VertxSendAdapterConfigFactory =
-    new VertxSendAdapterConfigFactory(log, new VertxEndpointResolver(endpoints.asScala))
+  def sendTo(routes: JFunction[Any, JOption[String]]): VertxSendAdapterConfigFactory =
+    new VertxSendAdapterConfigFactory(log, new VertxEndpointRouter(routes.asScala))
 }
 
-class VertxPublishAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointResolver)
+class VertxPublishAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointRouter)
   extends CompletableVertxAdapterConfigFactory {
   import JavaConfigConverters._
 
@@ -69,15 +69,15 @@ class VertxPublishAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointRe
     VertxPublishAdapterConfig(id, log, endpoints).asJava
 }
 
-class VertxSendAdapterConfigFactory(log: ActorRef, endpoints: VertxEndpointResolver, deliveryMode: DeliveryMode = AtMostOnce)
+class VertxSendAdapterConfigFactory(log: ActorRef, endpointRouter: VertxEndpointRouter, deliveryMode: DeliveryMode = AtMostOnce)
   extends CompletableVertxAdapterConfigFactory {
   import JavaConfigConverters._
 
   def atLeastOnce(confirmationType: ConfirmationType, confirmationTimeout: Duration): VertxSendAdapterConfigFactory =
-    new VertxSendAdapterConfigFactory(log, endpoints, AtLeastOnce(confirmationType.asScala, confirmationTimeout.asScala))
+    new VertxSendAdapterConfigFactory(log, endpointRouter, AtLeastOnce(confirmationType.asScala, confirmationTimeout.asScala))
 
   override def as(id: String): VertxAdapterConfig =
-    VertxSendAdapterConfig(id, log, endpoints, deliveryMode).asJava
+    VertxSendAdapterConfig(id, log, endpointRouter, deliveryMode).asJava
 }
 
 class VertxWriteAdapterConfigFactory(endpoints: Seq[String]) {

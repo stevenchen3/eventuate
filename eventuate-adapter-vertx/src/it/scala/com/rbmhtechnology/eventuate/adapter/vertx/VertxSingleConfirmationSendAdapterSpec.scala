@@ -29,70 +29,103 @@ class VertxSingleConfirmationSendAdapterSpec extends TestKit(ActorSystem("test",
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"
-  val endpoint = VertxEndpointResolver("vertx-eb-endpoint")
-  var ebProbe: TestProbe = _
 
-  override def beforeEach(): Unit = {
-    super.beforeEach()
-
-    ebProbe = eventBusProbe(endpoint.address)
-    registerCodec()
-    logAdapter()
-  }
-
-  def logAdapter(): ActorRef =
-    system.actorOf(VertxSingleConfirmationSendAdapter.props(inboundLogId, log, endpoint, vertx, redeliverDelay))
+  def startLogAdapter(endpointRouter: VertxEndpointRouter): ActorRef =
+    system.actorOf(VertxSingleConfirmationSendAdapter.props(inboundLogId, log, endpointRouter, vertx, redeliverDelay))
 
   "A VertxSingleConfirmationSendAdapter" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
+        startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
         writeEvents("e", 5)
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2")
-        ebProbe.expectVertxMsg(body = "e-3")
-        ebProbe.expectVertxMsg(body = "e-4")
-        ebProbe.expectVertxMsg(body = "e-5")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2")
+        endpoint1Probe.expectVertxMsg(body = "e-3")
+        endpoint1Probe.expectVertxMsg(body = "e-4")
+        endpoint1Probe.expectVertxMsg(body = "e-5")
       }
       "redeliver all unconfirmed events" in {
+        startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
         writeEvents("e", 2)
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2")
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2")
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2")
       }
       "redeliver only unconfirmed events" in {
+        startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
         writeEvents("e", 5)
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2").confirm()
-        ebProbe.expectVertxMsg(body = "e-3").confirm()
-        ebProbe.expectVertxMsg(body = "e-4").confirm()
-        ebProbe.expectVertxMsg(body = "e-5")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-3").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-4").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-5")
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-5")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-5")
       }
       "redeliver only unconfirmed events while processing new events" in {
+        startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
         writeEvents("e", 3)
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-2").confirm()
-        ebProbe.expectVertxMsg(body = "e-3")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-2").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-3")
 
         writeEvents("e", 2, start = 4)
 
-        ebProbe.expectVertxMsg(body = "e-4").confirm()
-        ebProbe.expectVertxMsg(body = "e-5")
+        endpoint1Probe.expectVertxMsg(body = "e-4").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-5")
 
-        ebProbe.expectVertxMsg(body = "e-1")
-        ebProbe.expectVertxMsg(body = "e-3")
-        ebProbe.expectVertxMsg(body = "e-5")
+        endpoint1Probe.expectVertxMsg(body = "e-1")
+        endpoint1Probe.expectVertxMsg(body = "e-3")
+        endpoint1Probe.expectVertxMsg(body = "e-5")
+      }
+      "deliver selected events only" in {
+        startLogAdapter(VertxEndpointRouter.route {
+          case ev: String if isOddEvent(ev, "e") => endpoint1
+        })
+        writeEvents("e", 10)
+
+        endpoint1Probe.expectVertxMsg(body = "e-1").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-3").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-5").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-7").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-9").confirm()
+      }
+      "route events to different endpoints" in {
+        startLogAdapter(VertxEndpointRouter.route {
+          case ev: String if isEvenEvent(ev, "e") => endpoint1
+          case ev: String if isOddEvent(ev, "e") => endpoint2
+        })
+        writeEvents("e", 10)
+
+        endpoint1Probe.expectVertxMsg(body = "e-2").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-4").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-6").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-8").confirm()
+        endpoint1Probe.expectVertxMsg(body = "e-10").confirm()
+
+        endpoint2Probe.expectVertxMsg(body = "e-1").confirm()
+        endpoint2Probe.expectVertxMsg(body = "e-3").confirm()
+        endpoint2Probe.expectVertxMsg(body = "e-5").confirm()
+        endpoint2Probe.expectVertxMsg(body = "e-7").confirm()
+        endpoint2Probe.expectVertxMsg(body = "e-9").confirm()
+      }
+      "deliver no events if the routing does not match" in {
+        startLogAdapter(VertxEndpointRouter.route {
+          case "i-will-never-match" => endpoint1
+        })
+        writeEvents("e", 10)
+
+        endpoint1Probe.expectNoMsg(1.second)
       }
     }
   }

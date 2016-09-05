@@ -68,7 +68,6 @@ class VertxWriteAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdap
     resultProbe = TestProbe()
     logProbe = TestProbe()
 
-    registerCodec()
     logReader(logProbe.ref)
     persist = createPersist(resultProbe.ref, endpoint)
   }
