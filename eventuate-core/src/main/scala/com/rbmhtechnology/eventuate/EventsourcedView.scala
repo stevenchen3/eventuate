@@ -319,6 +319,12 @@ trait EventsourcedView extends Actor with Stash {
   }
 
   /**
+   * ...
+   */
+  def replayFromSequenceNr: Option[Long] =
+    None
+
+  /**
    * Internal API.
    */
   private[eventuate] def snapshotCaptured(snapshot: Snapshot): Snapshot =
@@ -342,7 +348,10 @@ trait EventsourcedView extends Actor with Stash {
    * Internal API.
    */
   private[eventuate] def init(): Unit =
-    load()
+    replayFromSequenceNr match {
+      case Some(snr) => replay(snr, subscribe = true)
+      case None      => load()
+    }
 
   /**
    * Internal API.

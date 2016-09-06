@@ -115,7 +115,7 @@ trait EventsourcedWriter[R, W] extends EventsourcedView {
    * and can be overridden.
    */
   def readSuccess(result: R): Option[Long] =
-    None
+    replayFromSequenceNr
 
   /**
    * Called with a write result after a `write` operation successfully completes. This method may update
