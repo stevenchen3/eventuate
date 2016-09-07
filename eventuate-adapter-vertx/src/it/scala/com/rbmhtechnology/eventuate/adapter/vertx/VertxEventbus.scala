@@ -43,9 +43,6 @@ trait VertxEventbus extends BeforeAndAfterEach {
   val endpoint3 = "vertx-endpoint3"
 
   var vertx: Vertx = _
-  var endpoint1Probe: TestProbe = _
-  var endpoint2Probe: TestProbe = _
-  var endpoint3Probe: TestProbe = _
 
   override def beforeEach(): Unit = {
     super.beforeEach()
@@ -54,10 +51,6 @@ trait VertxEventbus extends BeforeAndAfterEach {
     if (registerEventBusCodec) {
       registerCodec()
     }
-
-    endpoint1Probe = eventBusProbe(endpoint1)
-    endpoint2Probe = eventBusProbe(endpoint2)
-    endpoint3Probe = eventBusProbe(endpoint3)
   }
 
   def registerCodec(): Unit = {
@@ -71,7 +64,7 @@ trait VertxEventbus extends BeforeAndAfterEach {
     probe
   }
 
-  implicit class RichTestProbe(probe: TestProbe) {
+  implicit class VertxTestProbe(probe: TestProbe) {
     def expectVertxMsg[T](body: T, max: Duration = Duration.Undefined)(implicit t: ClassTag[T]): VertxEventBusMessage[T] = {
       probe.expectMsgPF[VertxEventBusMessage[T]](max, hint = s"VertxEventBusMessage($body, _)") {
         case m: VertxEventBusMessage[T] if m.body == body => m
@@ -86,5 +79,21 @@ trait VertxEventbus extends BeforeAndAfterEach {
         case f@Failure(err:T) => err
       }
     }
+  }
+}
+
+trait VertxEventbusProbes extends BeforeAndAfterEach {
+  this: TestKit with Suite with VertxEventbus =>
+
+  var endpoint1Probe: TestProbe = _
+  var endpoint2Probe: TestProbe = _
+  var endpoint3Probe: TestProbe = _
+
+  override def beforeEach(): Unit = {
+    super.beforeEach()
+
+    endpoint1Probe = eventBusProbe(endpoint1)
+    endpoint2Probe = eventBusProbe(endpoint2)
+    endpoint3Probe = eventBusProbe(endpoint3)
   }
 }

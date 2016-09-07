@@ -36,7 +36,8 @@ object VertxAdapterSystemSpec {
 }
 
 class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSystemSpec.Config))
-  with WordSpecLike with MustMatchers with BeforeAndAfterAll with VertxEventbus with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb {
+  with WordSpecLike with MustMatchers with BeforeAndAfterAll with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb
+  with VertxEventbus with VertxEventbusProbes {
 
   val logName = "logA"
   val adapterId = "adapter1"

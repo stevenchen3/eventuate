@@ -25,7 +25,7 @@ import scala.concurrent.duration._
 
 class VertxBatchConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
-  with ActorStorage with EventWriter with VertxEventbus {
+  with ActorStorage with EventWriter with VertxEventbus with VertxEventbusProbes {
 
   val confirmationTimeout = 1.seconds
   val storageTimeout = 500.millis

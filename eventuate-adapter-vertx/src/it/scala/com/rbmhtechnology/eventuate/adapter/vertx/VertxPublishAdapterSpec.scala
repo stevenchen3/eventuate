@@ -34,7 +34,7 @@ object VertxPublishAdapterSpec {
 
 class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with ActorStorage with EventWriter
-  with VertxEventbus {
+  with VertxEventbus with VertxEventbusProbes {
 
   val inboundLogId = "log_inbound"
 

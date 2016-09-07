@@ -25,7 +25,7 @@ import scala.concurrent.duration._
 
 class VertxSingleConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
-  with VertxEventbus {
+  with VertxEventbus with VertxEventbusProbes {
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"

@@ -22,23 +22,48 @@ import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ VertxAdapterConfig => J
 
 import scala.annotation.varargs
 import scala.collection.immutable.Seq
+import scalaz.Scalaz._
+import scalaz._
 
 object VertxAdapterSystemConfig {
   import scala.collection.JavaConverters._
 
-  def apply(adapterConfigurations: VertxAdapterConfig*): VertxAdapterSystemConfig =
-    new VertxAdapterSystemConfig(adapterConfigurations.toVector)
+  def apply(adapterConfigurations: Seq[VertxAdapterConfig]): VertxAdapterSystemConfig = {
+    validateConfigurations(adapterConfigurations) match {
+      case \/-(cs) =>
+        new VertxAdapterSystemConfig(cs)
+      case -\/(errs) =>
+        throw new IllegalArgumentException(s"Invalid configuration given. Cause:\n${errs.mkString("\n")}")
+    }
+  }
 
-  def apply(adapterConfigurations: Seq[VertxAdapterConfig]): VertxAdapterSystemConfig =
-    new VertxAdapterSystemConfig(adapterConfigurations)
+  def apply(adapterConfigurations: VertxAdapterConfig*): VertxAdapterSystemConfig =
+    VertxAdapterSystemConfig(adapterConfigurations.toVector)
 
   @varargs
   def create(adapterConfigurations: JVertxAdapterConfig*): VertxAdapterSystemConfig =
-    new VertxAdapterSystemConfig(adapterConfigurations.toList.map(_.underlying))
+    VertxAdapterSystemConfig(adapterConfigurations.toList.map(_.underlying))
 
   def create(adapterConfigurations: JCollection[JVertxAdapterConfig]): VertxAdapterSystemConfig =
-    new VertxAdapterSystemConfig(adapterConfigurations.asScala.toList.map(_.underlying))
+    VertxAdapterSystemConfig(adapterConfigurations.asScala.toList.map(_.underlying))
+
+  private def validateConfigurations(configs: Seq[VertxAdapterConfig]): \/[Seq[String], Seq[VertxAdapterConfig]] = {
+    val invalid = configs.groupBy(_.id).filter(c => c._2.size > 1)
+
+    if (invalid.isEmpty)
+      configs.right
+    else
+      invalid.map(c => s"Ambigious definition for adapter with id '${c._1}' given. An id may only be used once.")
+        .toVector
+        .left
+  }
 }
 
 class VertxAdapterSystemConfig(private[vertx] val adapterConfigs: Seq[VertxAdapterConfig]) {
+
+  val readAdapters: Seq[VertxReadAdapterConfig] =
+    adapterConfigs.collect({ case c: VertxReadAdapterConfig => c })
+
+  val writeAdapters: Seq[VertxWriteAdapterConfig] =
+    adapterConfigs.collect({ case c: VertxWriteAdapterConfig => c })
 }

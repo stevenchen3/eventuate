@@ -25,10 +25,13 @@ sealed trait VertxAdapterConfig {
   def id: String
   def log: ActorRef
 }
+sealed trait VertxReadAdapterConfig extends VertxAdapterConfig {
+  def endpointRouter: VertxEndpointRouter
+}
 
-case class VertxPublishAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter) extends VertxAdapterConfig
-case class VertxSendAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter, deliveryMode: DeliveryMode) extends VertxAdapterConfig
-case class VertxWriteAdapterConfig(id: String, log: ActorRef, endpointRouter: Seq[String], filter: PartialFunction[Any, Boolean]) extends VertxAdapterConfig
+case class VertxPublishAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter) extends VertxReadAdapterConfig
+case class VertxSendAdapterConfig(id: String, log: ActorRef, endpointRouter: VertxEndpointRouter, deliveryMode: DeliveryMode) extends VertxReadAdapterConfig
+case class VertxWriteAdapterConfig(id: String, log: ActorRef, endpoints: Seq[String], filter: PartialFunction[Any, Boolean]) extends VertxAdapterConfig
 
 sealed trait ConfirmationType {}
 case object Single extends ConfirmationType
@@ -93,7 +96,7 @@ class VertxSendAdapterConfigFactory(log: ActorRef, endpointRouter: VertxEndpoint
 class VertxWriteAdapterConfigFactory(endpoints: Seq[String]) {
 
   def writeTo(log: ActorRef, filter: PartialFunction[Any, Boolean] = { case _ => true }) = new CompletableVertxAdapterConfigFactory {
-    override def as(id: String): VertxAdapterConfig =
+    override def as(id: String): VertxWriteAdapterConfig =
       VertxWriteAdapterConfig(id, log, endpoints, filter)
   }
 }

@@ -54,22 +54,27 @@ class VertxAdapterSystem(config: VertxAdapterSystemConfig, vertx: Vertx, storage
     val supervisor = system.actorOf(VertxAdapterSupervisor.props(adapters))
   }
 
-  private def adapters: Seq[Props] = {
-    config.adapterConfigs.map {
-      case VertxPublishAdapterConfig(id, log, endpointRouter) =>
-        VertxPublishAdapter.props(id, log, endpointRouter, vertx, storageProvider)
+  private def adapters: Seq[Props] =
+    writeAdapters ++ readAdapters
 
-      case VertxSendAdapterConfig(id, log, endpointRouter, AtMostOnce) =>
-        VertxSendAdapter.props(id, log, endpointRouter, vertx, storageProvider)
+  private def readAdapters: Seq[Props] = config.readAdapters.map {
+    case VertxPublishAdapterConfig(id, log, endpointRouter) =>
+      VertxPublishAdapter.props(id, log, endpointRouter, vertx, storageProvider)
 
-      case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Single, timeout)) =>
-        VertxSingleConfirmationSendAdapter.props(id, log, endpointRouter, vertx, timeout)
+    case VertxSendAdapterConfig(id, log, endpointRouter, AtMostOnce) =>
+      VertxSendAdapter.props(id, log, endpointRouter, vertx, storageProvider)
 
-      case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Batch(size), timeout)) =>
-        VertxBatchConfirmationSendAdapter.props(id, log, endpointRouter, vertx, storageProvider, size, timeout)
+    case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Single, timeout)) =>
+      VertxSingleConfirmationSendAdapter.props(id, log, endpointRouter, vertx, timeout)
 
-      case VertxWriteAdapterConfig(id, log, endpoints, filter) =>
-        VertxWriteAdapter.props(id, log, endpoints.head, vertx)
-    }
+    case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Batch(size), timeout)) =>
+      VertxBatchConfirmationSendAdapter.props(id, log, endpointRouter, vertx, storageProvider, size, timeout)
+  }
+
+  private def writeAdapters: Seq[Props] = {
+    if (config.writeAdapters.nonEmpty)
+      Seq(VertxWriteRouter.props(config.writeAdapters, vertx))
+    else
+      Seq.empty
   }
 }
