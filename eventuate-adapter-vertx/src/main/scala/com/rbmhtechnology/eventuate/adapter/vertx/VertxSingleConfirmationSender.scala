@@ -18,13 +18,14 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorLogging, ActorRef, Props }
 import akka.pattern.pipe
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxEndpointRouter
 import com.rbmhtechnology.eventuate.{ ConfirmedDelivery, EventsourcedActor }
 import io.vertx.core.Vertx
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{ Failure, Success }
 
-private[vertx] object VertxSingleConfirmationSendAdapter {
+private[vertx] object VertxSingleConfirmationSender {
 
   case class DeliverEvent(event: EventEnvelope, deliveryId: String)
   case class Confirm(deliveryId: String)
@@ -34,13 +35,13 @@ private[vertx] object VertxSingleConfirmationSendAdapter {
   case class DeliveryConfirmed()
 
   def props(id: String, eventLog: ActorRef, endpointRouter: VertxEndpointRouter, vertx: Vertx, confirmationTimeout: FiniteDuration): Props =
-    Props(new VertxSingleConfirmationSendAdapter(id, eventLog, endpointRouter, vertx, confirmationTimeout))
+    Props(new VertxSingleConfirmationSender(id, eventLog, endpointRouter, vertx, confirmationTimeout))
 }
 
-private[vertx] class VertxSingleConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, confirmationTimeout: FiniteDuration)
+private[vertx] class VertxSingleConfirmationSender(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, confirmationTimeout: FiniteDuration)
   extends EventsourcedActor with MessageSender with ConfirmedDelivery with ActorLogging {
 
-  import VertxSingleConfirmationSendAdapter._
+  import VertxSingleConfirmationSender._
   import context.dispatcher
 
   context.system.scheduler.schedule(confirmationTimeout, confirmationTimeout, self, Redeliver)

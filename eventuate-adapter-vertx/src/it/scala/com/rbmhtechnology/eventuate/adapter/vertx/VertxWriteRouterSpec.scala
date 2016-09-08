@@ -21,6 +21,7 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.EventsourcingProtocol._
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{VertxAdapterConfig, VertxWriteAdapterConfig}
 import com.rbmhtechnology.eventuate.utilities._
 import com.rbmhtechnology.eventuate.{EventsourcedView, SingleLocationSpecLeveldb}
 import io.vertx.core.eventbus.{Message, ReplyException}
@@ -54,9 +55,10 @@ object VertxWriteRouterSpec {
   }
 }
 
-class VertxWriteRouterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
-  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEventbus {
+class VertxWriteRouterSpec extends TestKit(ActorSystem("test", VertxPublisherSpec.Config))
+  with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with VertxEnvironment {
 
+  import utilities._
   import VertxHandlerConverters._
   import VertxWriteRouterSpec._
   import system.dispatcher
@@ -104,12 +106,6 @@ class VertxWriteRouterSpec extends TestKit(ActorSystem("test", VertxPublishAdapt
     val promise = Promise[Message[Any]]()
     vertx.eventBus().send[Any](endpoint, event, promise.asVertxHandler)
     promise.future.map(_.body)
-  }
-
-  implicit class TestProbeExt(probe: TestProbe) {
-    def receiveInAnyOrder[T](objs: T*): Unit = {
-      probe.receiveN(objs.size) must contain theSameElementsAs objs
-    }
   }
 
   "A VertxWriteRouter" when {

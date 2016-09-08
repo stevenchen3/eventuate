@@ -19,6 +19,7 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.pattern.ask
 import akka.testkit.{TestKit, TestProbe}
 import akka.util.Timeout
+import com.rbmhtechnology.eventuate.adapter.vertx.api.StorageProvider
 import org.scalatest.{BeforeAndAfterEach, Suite}
 
 import scala.concurrent.{ExecutionContext, Future}

@@ -17,7 +17,8 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.ActorSystem
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestKit
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{VertxAdapterConfig, VertxAdapterSystemConfig}
 import com.rbmhtechnology.eventuate.log.EventLogWriter
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog
 import com.rbmhtechnology.eventuate.utilities._
@@ -37,7 +38,9 @@ object VertxAdapterSystemSpec {
 
 class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSystemSpec.Config))
   with WordSpecLike with MustMatchers with BeforeAndAfterAll with ActorStorage with StopSystemAfterAll with LocationCleanupLeveldb
-  with VertxEventbus with VertxEventbusProbes {
+  with VertxEnvironment with VertxEventBusProbes {
+
+  import utilities._
 
   val logName = "logA"
   val adapterId = "adapter1"

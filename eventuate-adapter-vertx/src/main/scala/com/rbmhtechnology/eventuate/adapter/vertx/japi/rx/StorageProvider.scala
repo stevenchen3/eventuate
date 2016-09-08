@@ -18,7 +18,7 @@ package com.rbmhtechnology.eventuate.adapter.vertx.japi.rx
 
 import java.lang.{ Long => JLong }
 
-import com.rbmhtechnology.eventuate.adapter.vertx.{ StorageProvider => SStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{ StorageProvider => SStorageProvider }
 import rx.{ Observable, Observer }
 
 import scala.concurrent.{ ExecutionContext, Future, Promise }

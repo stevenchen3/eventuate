@@ -17,6 +17,7 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import com.rbmhtechnology.eventuate.EventsourcedWriter
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{ StorageProvider, VertxEndpointRouter }
 import io.vertx.core.eventbus.impl.MessageImpl
 import io.vertx.core.eventbus.{ DeliveryOptions, EventBus, Message }
 import io.vertx.core.{ AsyncResult, Handler, Vertx, Future => VertxFuture }
@@ -104,7 +105,7 @@ trait SequenceNumberProgressStore extends ProgressStore[Long, Long] {
     result
 }
 
-trait VertxReadAdapter[R, W] extends EventsourcedWriter[R, W] with MessageDelivery with ProgressStore[R, W] {
+trait VertxReader[R, W] extends EventsourcedWriter[R, W] with MessageDelivery with ProgressStore[R, W] {
   import context.dispatcher
 
   var events: Vector[EventEnvelope] = Vector.empty

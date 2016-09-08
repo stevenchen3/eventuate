@@ -17,18 +17,19 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorRef, Props }
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{ StorageProvider, VertxEndpointRouter }
 import io.vertx.core.Vertx
 
 import scala.concurrent.duration._
 
-private[vertx] object VertxBatchConfirmationSendAdapter {
+private[vertx] object VertxBatchConfirmationSender {
 
   def props(id: String, eventLog: ActorRef, endpointRouter: VertxEndpointRouter, vertx: Vertx, storageProvider: StorageProvider, batchSize: Int, confirmationTimeout: FiniteDuration): Props =
-    Props(new VertxBatchConfirmationSendAdapter(id, eventLog, endpointRouter, vertx, storageProvider, batchSize, confirmationTimeout))
+    Props(new VertxBatchConfirmationSender(id, eventLog, endpointRouter, vertx, storageProvider, batchSize, confirmationTimeout))
 }
 
-private[vertx] class VertxBatchConfirmationSendAdapter(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, val storageProvider: StorageProvider, batchSize: Int, val confirmationTimeout: FiniteDuration)
-  extends VertxReadAdapter[Long, Long] with AtLeastOnceDelivery with MessageSender with SequenceNumberProgressStore {
+private[vertx] class VertxBatchConfirmationSender(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, val storageProvider: StorageProvider, batchSize: Int, val confirmationTimeout: FiniteDuration)
+  extends VertxReader[Long, Long] with AtLeastOnceDelivery with MessageSender with SequenceNumberProgressStore {
 
   override def replayBatchSize: Int = batchSize
 }

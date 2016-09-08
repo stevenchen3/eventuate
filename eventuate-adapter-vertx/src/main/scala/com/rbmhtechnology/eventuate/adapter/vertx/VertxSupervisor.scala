@@ -16,15 +16,18 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.actor.{ ActorRef, Props }
-import io.vertx.core.Vertx
+import akka.actor.{ Actor, Props }
 
-private[eventuate] object VertxPublishAdapter {
-  def props(id: String, eventLog: ActorRef, endpointRouter: VertxEndpointRouter, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new VertxPublishAdapter(id, eventLog, endpointRouter, vertx, storageProvider))
-      .withDispatcher("eventuate.log.dispatchers.write-dispatcher")
+import scala.collection.immutable.Seq
+
+private[vertx] object VertxSupervisor {
+  def props(logAdapters: Seq[Props]): Props =
+    Props(new VertxSupervisor(logAdapters))
 }
 
-private[eventuate] class VertxPublishAdapter(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, val storageProvider: StorageProvider)
-  extends VertxReadAdapter[Long, Long] with AtMostOnceDelivery with MessagePublisher with SequenceNumberProgressStore {
+private[vertx] class VertxSupervisor(logAdapters: Seq[Props]) extends Actor {
+
+  val logAdapterActors = logAdapters.map(context.actorOf)
+
+  override def receive: Receive = Actor.emptyBehavior
 }

@@ -19,7 +19,7 @@ package com.rbmhtechnology.eventuate.adapter.vertx.japi
 import java.lang.{ Long => JLong }
 import java.util.concurrent.CompletionStage
 
-import com.rbmhtechnology.eventuate.adapter.vertx.{ StorageProvider => SStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{ StorageProvider => SStorageProvider }
 
 import scala.compat.java8.FutureConverters._
 import scala.concurrent.{ ExecutionContext, Future }

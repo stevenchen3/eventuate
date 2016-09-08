@@ -19,21 +19,24 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestKit, TestProbe}
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxEndpointRouter
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class VertxSingleConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
+class VertxSingleConfirmationSenderSpec extends TestKit(ActorSystem("test", VertxPublisherSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with EventWriter
-  with VertxEventbus with VertxEventbusProbes {
+  with VertxEnvironment with VertxEventBusProbes {
+
+  import utilities._
 
   val redeliverDelay = 1.seconds
   val inboundLogId = "log_inbound_confirm"
 
   def startLogAdapter(endpointRouter: VertxEndpointRouter): ActorRef =
-    system.actorOf(VertxSingleConfirmationSendAdapter.props(inboundLogId, log, endpointRouter, vertx, redeliverDelay))
+    system.actorOf(VertxSingleConfirmationSender.props(inboundLogId, log, endpointRouter, vertx, redeliverDelay))
 
-  "A VertxSingleConfirmationSendAdapter" when {
+  "A VertxSingleConfirmationSender" when {
     "reading events from an event log" must {
       "deliver the events to a single consumer" in {
         startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))

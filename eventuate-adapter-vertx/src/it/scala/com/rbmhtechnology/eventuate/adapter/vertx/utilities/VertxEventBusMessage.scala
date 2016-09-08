@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.eventuate.adapter.vertx
+package com.rbmhtechnology.eventuate.adapter.vertx.utilities
 
-import scala.concurrent.{ ExecutionContext, Future }
+import io.vertx.core.eventbus.Message
 
-trait StorageProvider {
-
-  def readProgress(logName: String)(implicit executionContext: ExecutionContext): Future[Long]
-
-  def writeProgress(logName: String, sequenceNr: Long)(implicit executionContext: ExecutionContext): Future[Long]
+case class VertxEventBusMessage[T](body: T, message: Message[T]) {
+  def confirm(): Unit = {
+    message.reply(null)
+  }
 }

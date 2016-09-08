@@ -17,8 +17,9 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorSystem, Props }
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.api._
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
 import io.vertx.core.Vertx
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 
@@ -44,14 +45,14 @@ object VertxAdapterSystem {
     new VertxAdapterSystem(config, vertx, storageProvider.asScala)(system)
 }
 
-class VertxAdapterSystem(config: VertxAdapterSystemConfig, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem) {
+class VertxAdapterSystem private[vertx] (config: VertxAdapterSystemConfig, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem) {
 
   private def registerCodec(): Unit =
     vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
 
   def start(): Unit = {
     registerCodec()
-    val supervisor = system.actorOf(VertxAdapterSupervisor.props(adapters))
+    val supervisor = system.actorOf(VertxSupervisor.props(adapters))
   }
 
   private def adapters: Seq[Props] =
@@ -59,16 +60,16 @@ class VertxAdapterSystem(config: VertxAdapterSystemConfig, vertx: Vertx, storage
 
   private def readAdapters: Seq[Props] = config.readAdapters.map {
     case VertxPublishAdapterConfig(id, log, endpointRouter) =>
-      VertxPublishAdapter.props(id, log, endpointRouter, vertx, storageProvider)
+      VertxPublisher.props(id, log, endpointRouter, vertx, storageProvider)
 
     case VertxSendAdapterConfig(id, log, endpointRouter, AtMostOnce) =>
-      VertxSendAdapter.props(id, log, endpointRouter, vertx, storageProvider)
+      VertxSender.props(id, log, endpointRouter, vertx, storageProvider)
 
     case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Single, timeout)) =>
-      VertxSingleConfirmationSendAdapter.props(id, log, endpointRouter, vertx, timeout)
+      VertxSingleConfirmationSender.props(id, log, endpointRouter, vertx, timeout)
 
     case VertxSendAdapterConfig(id, log, endpointRouter, AtLeastOnce(Batch(size), timeout)) =>
-      VertxBatchConfirmationSendAdapter.props(id, log, endpointRouter, vertx, storageProvider, size, timeout)
+      VertxBatchConfirmationSender.props(id, log, endpointRouter, vertx, storageProvider, size, timeout)
   }
 
   private def writeAdapters: Seq[Props] = {

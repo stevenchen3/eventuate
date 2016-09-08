@@ -22,8 +22,8 @@ import java.util.function.{ Predicate, Function => JFunction }
 import java.util.{ Optional => JOption }
 
 import akka.actor.ActorRef
-import com.rbmhtechnology.eventuate.adapter.vertx._
-import com.rbmhtechnology.eventuate.adapter.vertx.{ VertxAdapterConfig => SVertxAdapterConfig }
+import com.rbmhtechnology.eventuate.adapter.vertx.api._
+import com.rbmhtechnology.eventuate.adapter.vertx.api.{ VertxAdapterConfig => SVertxAdapterConfig }
 
 import scala.annotation.varargs
 import scala.collection.immutable.Seq
@@ -99,7 +99,7 @@ class VertxWriteAdapterConfigFactory(endpoints: Seq[String]) {
 }
 
 object JavaConfigConverters {
-  import com.rbmhtechnology.eventuate.adapter.vertx.{ ConfirmationType => SConfirmationType }
+  import com.rbmhtechnology.eventuate.adapter.vertx.api.{ ConfirmationType => SConfirmationType }
 
   implicit class AsScalaConfirmationType(ct: ConfirmationType) {
     def asScala: SConfirmationType = ct match {

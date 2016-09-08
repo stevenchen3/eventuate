@@ -19,26 +19,29 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ActorRef, ActorSystem, Status}
 import akka.testkit.TestKit
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxEndpointRouter
 import org.scalatest.{MustMatchers, WordSpecLike}
 
 import scala.concurrent.duration._
 
-class VertxBatchConfirmationSendAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
+class VertxBatchConfirmationSenderSpec extends TestKit(ActorSystem("test", VertxPublisherSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll
-  with ActorStorage with EventWriter with VertxEventbus with VertxEventbusProbes {
+  with ActorStorage with EventWriter with VertxEnvironment with VertxEventBusProbes {
+
+  import utilities._
 
   val confirmationTimeout = 1.seconds
   val storageTimeout = 500.millis
   val inboundLogId = "log_inbound_confirm"
 
   def startLogAdapter(endpointRouter: VertxEndpointRouter, batchSize: Int = 10): ActorRef =
-    system.actorOf(VertxBatchConfirmationSendAdapter.props(inboundLogId, log, endpointRouter, vertx, actorStorageProvider(), batchSize, confirmationTimeout))
+    system.actorOf(VertxBatchConfirmationSender.props(inboundLogId, log, endpointRouter, vertx, actorStorageProvider(), batchSize, confirmationTimeout))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
-  "A VertxBatchConfirmationSendAdapter" when {
+  "A VertxBatchConfirmationSender" when {
     "reading events from an event log" must {
       "deliver events to a single consumer" in {
         startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))

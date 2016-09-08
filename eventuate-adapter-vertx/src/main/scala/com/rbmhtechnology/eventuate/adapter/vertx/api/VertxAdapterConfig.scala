@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.eventuate.adapter.vertx
+package com.rbmhtechnology.eventuate.adapter.vertx.api
 
 import akka.actor.ActorRef
 

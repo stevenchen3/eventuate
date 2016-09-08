@@ -19,12 +19,13 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit._
 import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxEndpointRouter
 import com.typesafe.config.ConfigFactory
 import org.scalatest._
 
 import scala.concurrent.duration._
 
-object VertxPublishAdapterSpec {
+object VertxPublisherSpec {
   val Config = ConfigFactory.defaultApplication()
     .withFallback(ConfigFactory.parseString(
       """
@@ -32,20 +33,22 @@ object VertxPublishAdapterSpec {
       """.stripMargin))
 }
 
-class VertxPublishAdapterSpec extends TestKit(ActorSystem("test", VertxPublishAdapterSpec.Config))
+class VertxPublisherSpec extends TestKit(ActorSystem("test", VertxPublisherSpec.Config))
   with WordSpecLike with MustMatchers with SingleLocationSpecLeveldb with StopSystemAfterAll with ActorStorage with EventWriter
-  with VertxEventbus with VertxEventbusProbes {
+  with VertxEnvironment with VertxEventBusProbes {
+
+  import utilities._
 
   val inboundLogId = "log_inbound"
 
   def startLogAdapter(endpointRouter: VertxEndpointRouter): ActorRef =
-    system.actorOf(VertxPublishAdapter.props(inboundLogId, log, endpointRouter, vertx, actorStorageProvider()))
+    system.actorOf(VertxPublisher.props(inboundLogId, log, endpointRouter, vertx, actorStorageProvider()))
 
   def read: String = read(inboundLogId)
 
   def write: (Long) => String = write(inboundLogId)
 
-  "A VertxPublishAdapter" must {
+  "A VertxPublisher" must {
     "publish events from the beginning of the event log" in {
       startLogAdapter(VertxEndpointRouter.routeAllTo(endpoint1))
       val writtenEvents = writeEvents("ev", 50)

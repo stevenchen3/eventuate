@@ -17,12 +17,11 @@
 package com.rbmhtechnology.eventuate.adapter
 
 import com.rbmhtechnology.eventuate.EventsourcedView
-import io.vertx.core.eventbus.{ Message, MessageProducer => VertxMessageProducer }
 import io.vertx.core.{ Future => VertxFuture, _ }
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 import rx.functions.Func1
 
-import scala.concurrent.{ ExecutionContext, Future, Promise }
+import scala.concurrent.Promise
 import scala.util.{ Failure, Success }
 
 package object vertx {
@@ -89,18 +88,6 @@ package object vertx {
     implicit class Fn1AsRxFunc1[A, B](fn: A => B) {
       def asRx: Func1[A, B] = new Func1[A, B] {
         override def call(a: A): B = fn(a)
-      }
-    }
-  }
-
-  object VertxExtensions {
-    import VertxHandlerConverters._
-
-    implicit class RichMessageProducer[A](producer: VertxMessageProducer[A]) {
-      def sendFt[B](message: A)(implicit ec: ExecutionContext): Future[Message[B]] = {
-        val promise = Promise[Message[B]]()
-        producer.send(message, promise.asVertxHandler)
-        promise.future
       }
     }
   }

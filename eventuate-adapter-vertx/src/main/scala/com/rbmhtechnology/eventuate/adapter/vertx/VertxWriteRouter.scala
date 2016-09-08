@@ -17,7 +17,8 @@
 package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ Actor, ActorRef, Props }
-import com.rbmhtechnology.eventuate.adapter.vertx.VertxWriteAdapter.PersistMessage
+import com.rbmhtechnology.eventuate.adapter.vertx.VertxWriter.PersistMessage
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxWriteAdapterConfig
 import io.vertx.core.Vertx
 import io.vertx.core.eventbus.{ Message, MessageConsumer }
 
@@ -33,12 +34,12 @@ class VertxWriteRouter(configs: Seq[VertxWriteAdapterConfig], vertx: Vertx) exte
   import VertxHandlerConverters._
   import VertxWriteRouter._
 
-  val writeAdapters = configs
-    .map { c => c.id -> context.actorOf(VertxWriteAdapter.props(c.id, c.log)) }
+  val writers = configs
+    .map { c => c.id -> context.actorOf(VertxWriter.props(c.id, c.log)) }
     .toMap
 
   val consumers = configs
-    .flatMap { c => c.endpoints.distinct.map(e => Route(e, writeAdapters(c.id), c.filter)) }
+    .flatMap { c => c.endpoints.distinct.map(e => Route(e, writers(c.id), c.filter)) }
     .groupBy(_.sourceEndpoint)
     .map { case (endpoint, routes) => installMessageConsumer(endpoint, routes) }
 

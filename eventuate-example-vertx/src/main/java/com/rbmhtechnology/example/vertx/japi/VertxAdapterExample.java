@@ -24,7 +24,7 @@ import com.rbmhtechnology.eventuate.AbstractEventsourcedView;
 import com.rbmhtechnology.eventuate.ApplicationVersion;
 import com.rbmhtechnology.eventuate.ReplicationEndpoint;
 import com.rbmhtechnology.eventuate.adapter.vertx.VertxAdapterSystem;
-import com.rbmhtechnology.eventuate.adapter.vertx.VertxAdapterSystemConfig;
+import com.rbmhtechnology.eventuate.adapter.vertx.api.VertxAdapterSystemConfig;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.ConfirmationType;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.VertxAdapterConfig;
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.StorageProvider;

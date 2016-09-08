@@ -22,17 +22,16 @@ import io.vertx.core.eventbus.Message
 
 import scala.util.{ Failure, Success }
 
-private[vertx] object VertxWriteAdapter {
+private[vertx] object VertxWriter {
 
   case class PersistMessage(payload: Any, message: Message[Any])
 
   def props(id: String, eventLog: ActorRef): Props =
-    Props(new VertxWriteAdapter(id, eventLog))
+    Props(new VertxWriter(id, eventLog))
 }
 
-private[vertx] class VertxWriteAdapter(val id: String, val eventLog: ActorRef) extends EventsourcedActor {
-
-  import VertxWriteAdapter._
+private[vertx] class VertxWriter(val id: String, val eventLog: ActorRef) extends EventsourcedActor {
+  import VertxWriter._
 
   override def stateSync: Boolean = false
 

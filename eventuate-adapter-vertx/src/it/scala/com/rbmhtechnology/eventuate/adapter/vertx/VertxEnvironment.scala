@@ -16,15 +16,31 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.actor.{ ActorRef, Props }
+import akka.testkit.TestKit
 import io.vertx.core.Vertx
+import org.scalatest.{BeforeAndAfterEach, Suite}
 
-private[eventuate] object VertxSendAdapter {
-  def props(id: String, eventLog: ActorRef, endpointRouter: VertxEndpointRouter, vertx: Vertx, storageProvider: StorageProvider): Props =
-    Props(new VertxSendAdapter(id, eventLog, endpointRouter, vertx, storageProvider))
-      .withDispatcher("eventuate.log.dispatchers.write-dispatcher")
-}
+trait VertxEnvironment extends BeforeAndAfterEach {
+  this: TestKit with Suite =>
 
-private[eventuate] class VertxSendAdapter(val id: String, val eventLog: ActorRef, val endpointRouter: VertxEndpointRouter, val vertx: Vertx, val storageProvider: StorageProvider)
-  extends VertxReadAdapter[Long, Long] with AtMostOnceDelivery with MessageSender with SequenceNumberProgressStore {
+  val registerEventBusCodec = true
+
+  val endpoint1 = "vertx-endpoint1"
+  val endpoint2 = "vertx-endpoint2"
+  val endpoint3 = "vertx-endpoint3"
+
+  var vertx: Vertx = _
+
+  override def beforeEach(): Unit = {
+    super.beforeEach()
+    vertx = Vertx.vertx()
+
+    if (registerEventBusCodec) {
+      registerCodec()
+    }
+  }
+
+  def registerCodec(): Unit = {
+    vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
+  }
 }

@@ -14,20 +14,13 @@
  * limitations under the License.
  */
 
-package com.rbmhtechnology.eventuate.adapter.vertx
+package com.rbmhtechnology.eventuate.adapter.vertx.api
 
-import akka.actor.{ Actor, Props }
+import scala.concurrent.{ ExecutionContext, Future }
 
-import scala.collection.immutable.Seq
+trait StorageProvider {
 
-private[vertx] object VertxAdapterSupervisor {
-  def props(logAdapters: Seq[Props]): Props =
-    Props(new VertxAdapterSupervisor(logAdapters))
-}
+  def readProgress(logName: String)(implicit executionContext: ExecutionContext): Future[Long]
 
-private[vertx] class VertxAdapterSupervisor(logAdapters: Seq[Props]) extends Actor {
-
-  val logAdapterActors = logAdapters.map(context.actorOf)
-
-  override def receive: Receive = Actor.emptyBehavior
+  def writeProgress(logName: String, sequenceNr: Long)(implicit executionContext: ExecutionContext): Future[Long]
 }
