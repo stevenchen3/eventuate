@@ -190,7 +190,7 @@ object ReplicationProtocol {
   /**
    * Success reply after a [[ReplicationWrite]].
    */
-  case class ReplicationWriteSuccess(num: Int, storedReplicationProgress: Long, sourceLogId: String, currentTargetVersionVector: VectorTime, continueReplication: Boolean = false)
+  case class ReplicationWriteSuccess(events: Seq[DurableEvent], storedReplicationProgress: Long, sourceLogId: String, currentTargetVersionVector: VectorTime, continueReplication: Boolean = false)
 
   /**
    * Failure reply after a [[ReplicationWrite]].

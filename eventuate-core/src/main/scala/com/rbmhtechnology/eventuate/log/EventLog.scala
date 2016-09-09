@@ -510,7 +510,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
       case Success((updatedWrites, updatedEvents, clock2)) =>
         clock = clock2
         updatedWrites.foreach { w =>
-          val ws = ReplicationWriteSuccess(w.size, w.replicationProgress, w.sourceLogId, clock2.versionVector, w.continueReplication)
+          val ws = ReplicationWriteSuccess(w.events, w.replicationProgress, w.sourceLogId, clock2.versionVector, w.continueReplication)
           registry.notifySubscribers(w.events)
           channel.foreach(_ ! w)
           implicit val dispatcher = context.system.dispatchers.defaultGlobalDispatcher
