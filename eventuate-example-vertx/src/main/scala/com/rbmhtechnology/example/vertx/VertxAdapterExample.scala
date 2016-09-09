@@ -20,14 +20,14 @@ import java.io.File
 import java.nio.file.NoSuchFileException
 import java.util.UUID
 
-import akka.actor.{ActorRef, ActorSystem, Props}
+import akka.actor.{ ActorRef, ActorSystem, Props }
 import akka.pattern.ask
 import akka.util.Timeout
 import com.rbmhtechnology.eventuate.adapter.vertx._
 import com.rbmhtechnology.eventuate.adapter.vertx.api._
 import com.rbmhtechnology.eventuate.log.EventLogWriter
 import com.rbmhtechnology.eventuate.log.leveldb.LeveldbEventLog
-import com.rbmhtechnology.eventuate.{EventsourcedView, ReplicationConnection, ReplicationEndpoint}
+import com.rbmhtechnology.eventuate.{ EventsourcedView, ReplicationConnection, ReplicationEndpoint }
 import io.vertx.core._
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.eventbus.Message
@@ -35,8 +35,8 @@ import io.vertx.core.file.FileSystemException
 import io.vertx.core.json.JsonObject
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.util.{Failure, Random, Success}
+import scala.concurrent.{ ExecutionContext, Future, Promise }
+import scala.util.{ Failure, Random, Success }
 
 object LogNames {
   val logA = "log_S_A"

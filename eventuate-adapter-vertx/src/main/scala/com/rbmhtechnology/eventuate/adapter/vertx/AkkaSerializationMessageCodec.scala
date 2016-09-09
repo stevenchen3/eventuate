@@ -16,8 +16,9 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx
 
-import akka.actor.ActorSystem
-import akka.serialization.SerializationExtension
+import akka.actor.{ ActorSystem, ExtendedActorSystem, Extension, ExtensionId, ExtensionIdProvider }
+import com.rbmhtechnology.eventuate.serializer.CommonFormats.PayloadFormat
+import com.rbmhtechnology.eventuate.serializer.CommonSerializer
 import io.vertx.core.buffer.Buffer
 import io.vertx.core.eventbus.MessageCodec
 
@@ -33,33 +34,44 @@ object AkkaSerializationMessageCodec {
 
 class AkkaSerializationMessageCodec(override val name: String)(implicit system: ActorSystem) extends MessageCodec[AnyRef, AnyRef] {
 
-  lazy val serialization = SerializationExtension(system)
+  val serializer = PayloadSerializationExtension(system)
 
-  override def transform(o: AnyRef): AnyRef = o
+  override def transform(o: AnyRef): AnyRef =
+    o
 
   override def encodeToWire(buffer: Buffer, o: AnyRef): Unit = {
-    val clazz = o.getClass.getName.getBytes
-    val payload = serialization.serialize(o).get
-    buffer.appendInt(clazz.length)
-    buffer.appendBytes(clazz)
+    val payload = serializer.toBinary(o)
     buffer.appendInt(payload.length)
     buffer.appendBytes(payload)
   }
 
   override def decodeFromWire(pos: Int, buffer: Buffer): AnyRef = {
-    val classNameLength = buffer.getInt(pos)
-    val classNameStart = pos + Integer.BYTES
-
-    val className = new String(buffer.getBytes(classNameStart, classNameStart + classNameLength))
-
-    val payloadLengthStart = classNameStart + classNameLength
-    val payloadLength = buffer.getInt(payloadLengthStart)
-
-    val payloadStart = payloadLengthStart + Integer.BYTES
-    val payload = buffer.getBytes(payloadStart, payloadStart + payloadLength)
-
-    serialization.deserialize(payload, Class.forName(className)).get.asInstanceOf[AnyRef]
+    val payloadLength = buffer.getInt(pos)
+    val payload = buffer.getBytes(pos + Integer.BYTES, pos + Integer.BYTES + payloadLength)
+    serializer.fromBinary(payload).asInstanceOf[AnyRef]
   }
 
   override def systemCodecID(): Byte = -1
+}
+
+object PayloadSerializationExtension extends ExtensionId[PayloadSerializationExtension] with ExtensionIdProvider {
+
+  override def lookup = PayloadSerializationExtension
+
+  override def createExtension(system: ExtendedActorSystem): PayloadSerializationExtension =
+    new PayloadSerializationExtension(system)
+
+  override def get(system: ActorSystem): PayloadSerializationExtension =
+    super.get(system)
+}
+
+class PayloadSerializationExtension(system: ExtendedActorSystem) extends Extension {
+
+  val serializer = new CommonSerializer(system)
+
+  def toBinary(o: AnyRef): Array[Byte] =
+    serializer.payloadFormatBuilder(o).build().toByteArray
+
+  def fromBinary(b: Array[Byte]): Any =
+    serializer.payload(PayloadFormat.parseFrom(b))
 }
