@@ -16,36 +16,23 @@
 
 package com.rbmhtechnology.eventuate.adapter.vertx.api
 
-import java.util.{ Collection => JCollection }
-
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ VertxAdapterConfig => JVertxAdapterConfig }
-
-import scala.annotation.varargs
 import scala.collection.immutable.Seq
 import scalaz.Scalaz._
 import scalaz._
 
 object VertxAdapterSystemConfig {
-  import scala.collection.JavaConverters._
 
-  def apply(adapterConfigurations: Seq[VertxAdapterConfig]): VertxAdapterSystemConfig = {
+  def apply(): VertxAdapterSystemConfig =
+    VertxAdapterSystemConfig(Seq.empty, Seq.empty)
+
+  private def apply(adapterConfigurations: Seq[VertxAdapterConfig], codecClasses: Seq[Class[_]]): VertxAdapterSystemConfig = {
     validateConfigurations(adapterConfigurations) match {
       case \/-(cs) =>
-        new VertxAdapterSystemConfig(cs)
+        new VertxAdapterSystemConfig(cs, codecClasses)
       case -\/(errs) =>
         throw new IllegalArgumentException(s"Invalid configuration given. Cause:\n${errs.mkString("\n")}")
     }
   }
-
-  def apply(adapterConfigurations: VertxAdapterConfig*): VertxAdapterSystemConfig =
-    VertxAdapterSystemConfig(adapterConfigurations.toVector)
-
-  @varargs
-  def create(adapterConfigurations: JVertxAdapterConfig*): VertxAdapterSystemConfig =
-    VertxAdapterSystemConfig(adapterConfigurations.toList.map(_.underlying))
-
-  def create(adapterConfigurations: JCollection[JVertxAdapterConfig]): VertxAdapterSystemConfig =
-    VertxAdapterSystemConfig(adapterConfigurations.asScala.toList.map(_.underlying))
 
   private def validateConfigurations(configs: Seq[VertxAdapterConfig]): \/[Seq[String], Seq[VertxAdapterConfig]] = {
     val invalid = configs.groupBy(_.id).filter(c => c._2.size > 1)
@@ -59,11 +46,23 @@ object VertxAdapterSystemConfig {
   }
 }
 
-class VertxAdapterSystemConfig(private[vertx] val adapterConfigs: Seq[VertxAdapterConfig]) {
-
+class VertxAdapterSystemConfig(private[vertx] val configurations: Seq[VertxAdapterConfig],
+  private[vertx] val codecClasses: Seq[Class[_]]) {
   val readAdapters: Seq[VertxReadAdapterConfig] =
-    adapterConfigs.collect({ case c: VertxReadAdapterConfig => c })
+    configurations.collect({ case c: VertxReadAdapterConfig => c })
 
   val writeAdapters: Seq[VertxWriteAdapterConfig] =
-    adapterConfigs.collect({ case c: VertxWriteAdapterConfig => c })
+    configurations.collect({ case c: VertxWriteAdapterConfig => c })
+
+  def addAdapter(first: VertxAdapterConfig, rest: VertxAdapterConfig*): VertxAdapterSystemConfig =
+    addAdapters(first +: rest.toVector)
+
+  def addAdapters(adapterConfigurations: Seq[VertxAdapterConfig]): VertxAdapterSystemConfig =
+    VertxAdapterSystemConfig(configurations ++ adapterConfigurations, codecClasses)
+
+  def registerDefaultCodecFor(first: Class[_], rest: Class[_]*): VertxAdapterSystemConfig =
+    registerDefaultCodecForAll(first +: rest.toVector)
+
+  def registerDefaultCodecForAll(classes: Seq[Class[_]]): VertxAdapterSystemConfig =
+    VertxAdapterSystemConfig(configurations, codecClasses ++ classes)
 }

@@ -23,8 +23,6 @@ import org.scalatest.{BeforeAndAfterEach, Suite}
 trait VertxEnvironment extends BeforeAndAfterEach {
   this: TestKit with Suite =>
 
-  val registerEventBusCodec = true
-
   val endpoint1 = "vertx-endpoint1"
   val endpoint2 = "vertx-endpoint2"
   val endpoint3 = "vertx-endpoint3"
@@ -34,13 +32,5 @@ trait VertxEnvironment extends BeforeAndAfterEach {
   override def beforeEach(): Unit = {
     super.beforeEach()
     vertx = Vertx.vertx()
-
-    if (registerEventBusCodec) {
-      registerCodec()
-    }
-  }
-
-  def registerCodec(): Unit = {
-    vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
   }
 }

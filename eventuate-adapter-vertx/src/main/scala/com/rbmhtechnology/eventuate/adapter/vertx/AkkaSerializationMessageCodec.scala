@@ -22,14 +22,16 @@ import io.vertx.core.buffer.Buffer
 import io.vertx.core.eventbus.MessageCodec
 
 object AkkaSerializationMessageCodec {
-  def apply(implicit system: ActorSystem): MessageCodec[AnyRef, AnyRef] =
-    new AkkaSerializationMessageCodec()
-
   val Name = "akka-serialization-message-codec"
+
+  def apply(name: String)(implicit system: ActorSystem): MessageCodec[AnyRef, AnyRef] =
+    new AkkaSerializationMessageCodec(name)
+
+  def apply(clazz: Class[_])(implicit system: ActorSystem): MessageCodec[AnyRef, AnyRef] =
+    new AkkaSerializationMessageCodec(s"${AkkaSerializationMessageCodec.Name}-${clazz.getName}")
 }
 
-class AkkaSerializationMessageCodec(implicit system: ActorSystem) extends MessageCodec[AnyRef, AnyRef] {
-  import AkkaSerializationMessageCodec._
+class AkkaSerializationMessageCodec(override val name: String)(implicit system: ActorSystem) extends MessageCodec[AnyRef, AnyRef] {
 
   lazy val serialization = SerializationExtension(system)
 
@@ -58,8 +60,6 @@ class AkkaSerializationMessageCodec(implicit system: ActorSystem) extends Messag
 
     serialization.deserialize(payload, Class.forName(className)).get.asInstanceOf[AnyRef]
   }
-
-  override def name(): String = Name
 
   override def systemCodecID(): Byte = -1
 }

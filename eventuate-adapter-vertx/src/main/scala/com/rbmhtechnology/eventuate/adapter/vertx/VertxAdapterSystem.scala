@@ -18,8 +18,8 @@ package com.rbmhtechnology.eventuate.adapter.vertx
 
 import akka.actor.{ ActorSystem, Props }
 import com.rbmhtechnology.eventuate.adapter.vertx.api._
-import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider }
 import com.rbmhtechnology.eventuate.adapter.vertx.japi.rx.{ StorageProvider => RxStorageProvider }
+import com.rbmhtechnology.eventuate.adapter.vertx.japi.{ StorageProvider => JStorageProvider, VertxAdapterSystemConfig => JVertxAdapterSystemConfig }
 import io.vertx.core.Vertx
 import io.vertx.rxjava.core.{ Vertx => RxVertx }
 
@@ -32,26 +32,33 @@ object VertxAdapterSystem {
   def apply(config: VertxAdapterSystemConfig, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem): VertxAdapterSystem =
     new VertxAdapterSystem(config, vertx, storageProvider)
 
-  def create(config: VertxAdapterSystemConfig,
+  def create(config: JVertxAdapterSystemConfig,
     vertx: Vertx,
     storageProvider: JStorageProvider,
     system: ActorSystem): VertxAdapterSystem =
-    new VertxAdapterSystem(config, vertx, storageProvider.asScala)(system)
+    new VertxAdapterSystem(config.underlying, vertx, storageProvider.asScala)(system)
 
-  def create(config: VertxAdapterSystemConfig,
+  def create(config: JVertxAdapterSystemConfig,
     vertx: RxVertx,
     storageProvider: RxStorageProvider,
     system: ActorSystem): VertxAdapterSystem =
-    new VertxAdapterSystem(config, vertx, storageProvider.asScala)(system)
+    new VertxAdapterSystem(config.underlying, vertx, storageProvider.asScala)(system)
 }
 
 class VertxAdapterSystem private[vertx] (config: VertxAdapterSystemConfig, vertx: Vertx, storageProvider: StorageProvider)(implicit system: ActorSystem) {
 
-  private def registerCodec(): Unit =
-    vertx.eventBus().registerCodec(AkkaSerializationMessageCodec(system))
+  private def registerEventBusCodecs(): Unit = {
+    config.codecClasses.foreach(c =>
+      try {
+        vertx.eventBus().registerDefaultCodec(c.asInstanceOf[Class[AnyRef]], AkkaSerializationMessageCodec(c))
+      } catch {
+        case e: IllegalStateException =>
+          system.log.warning(s"An adapter codec for class ${c.getName} was configured, even though a default codec was already registered for this class.")
+      })
+  }
 
   def start(): Unit = {
-    registerCodec()
+    registerEventBusCodecs()
     val supervisor = system.actorOf(VertxSupervisor.props(adapters))
   }
 

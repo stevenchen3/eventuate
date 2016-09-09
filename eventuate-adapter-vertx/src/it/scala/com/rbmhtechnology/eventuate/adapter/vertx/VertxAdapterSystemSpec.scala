@@ -34,6 +34,8 @@ object VertxAdapterSystemSpec {
       """
         |eventuate.log.replay-batch-size = 10
       """.stripMargin))
+
+  case class Event(id: String)
 }
 
 class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSystemSpec.Config))
@@ -41,13 +43,13 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
   with VertxEnvironment with VertxEventBusProbes {
 
   import utilities._
+  import VertxAdapterSystemSpec._
 
   val logName = "logA"
   val adapterId = "adapter1"
   var endpoint: ReplicationEndpoint = _
 
   override def config: Config = VertxAdapterSystemSpec.Config
-  override val registerEventBusCodec: Boolean = false
 
   override def beforeAll(): Unit = {
     super.beforeAll()
@@ -57,20 +59,22 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
   "A VertxAdapterSystem" must {
     "read events from an inbound log and deliver them to the Vert.x eventbus" in {
       val log = endpoint.logs(logName)
-      val vertxAdapterSystem = VertxAdapterSystem(VertxAdapterSystemConfig(
-        VertxAdapterConfig.fromLog(log)
-            .publishTo {
-              case _ => endpoint1
-            }
-            .as("adapter1")
-      ), vertx, actorStorageProvider())
+      val adapterSystemConfig = VertxAdapterSystemConfig()
+        .addAdapter(VertxAdapterConfig.fromLog(log)
+          .publishTo {
+            case _ => endpoint1
+          }
+          .as("adapter1"))
+        .registerDefaultCodecFor(classOf[Event])
+
+      val vertxAdapterSystem = VertxAdapterSystem(adapterSystemConfig, vertx, actorStorageProvider())
       val logWriter = new EventLogWriter("w1", endpoint.logs(logName))
       val storageName = adapterId
 
       endpoint.activate()
       vertxAdapterSystem.start()
 
-      val write1 = logWriter.write(Seq("event1")).await.head
+      val write1 = logWriter.write(Seq(Event("1"))).await.head
 
       storageProbe.expectMsg(read(storageName))
       storageProbe.reply(0L)
@@ -78,14 +82,14 @@ class VertxAdapterSystemSpec extends TestKit(ActorSystem("test", VertxAdapterSys
       storageProbe.expectMsg(write(storageName)(1))
       storageProbe.reply(1L)
 
-      endpoint1Probe.expectVertxMsg(body = "event1")
+      endpoint1Probe.expectVertxMsg(body = Event("1"))
 
-      val write2 = logWriter.write(Seq("event2", "event3", "event4")).await
+      val write2 = logWriter.write(Seq(Event("2"), Event("3"), Event("4"))).await
 
       storageProbe.expectMsg(write(storageName)(2))
       storageProbe.reply(2L)
 
-      endpoint1Probe.receiveNVertxMsg[String](3).map(_.body) must be(write2.map(_.payload))
+      endpoint1Probe.receiveNVertxMsg[Event](3).map(_.body) must be(write2.map(_.payload))
 
       storageProbe.expectMsg(write(storageName)(4))
       storageProbe.reply(4L)

@@ -34,23 +34,17 @@ trait MessageProducer {
   protected def eventBus(): EventBus =
     vertx.eventBus()
 
-  protected def deliveryOptions(d: DeliveryOptions): DeliveryOptions =
-    new DeliveryOptions(d).setCodecName(AkkaSerializationMessageCodec.Name)
-
-  protected lazy val DefaultDeliveryOptions =
-    deliveryOptions(new DeliveryOptions())
-
   def vertx: Vertx
 
   protected def produce[A](address: String, msg: Any, deliveryOptions: DeliveryOptions, handler: Handler[AsyncResult[Message[A]]]): Unit
 
   def produce(address: String, msg: Any): Unit = {
-    produce[Unit](address, msg, DefaultDeliveryOptions, ((ar: AsyncResult[Message[Unit]]) => {}).asVertxHandler)
+    produce[Unit](address, msg, new DeliveryOptions(), ((ar: AsyncResult[Message[Unit]]) => {}).asVertxHandler)
   }
 
   def produce[A](address: String, msg: Any, timeout: FiniteDuration = 30.seconds)(implicit ec: ExecutionContext): Future[A] = {
     val promise = Promise[Message[A]]
-    produce(address, msg, deliveryOptions(new DeliveryOptions().setSendTimeout(timeout.toMillis)), promise.asVertxHandler)
+    produce(address, msg, new DeliveryOptions().setSendTimeout(timeout.toMillis), promise.asVertxHandler)
     promise.future.map(_.body)
   }
 }

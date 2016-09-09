@@ -49,6 +49,8 @@ object Endpoints {
   val Writer = "eb-address:logB-writer"
 }
 
+case class Event(id: String)
+
 object VertxAdapterExample extends App {
 
   import ExampleVertxExtensions._
@@ -65,17 +67,23 @@ object VertxAdapterExample extends App {
   val logA = endpoint.logs(LogNames.logA)
   val logB = endpoint.logs(LogNames.logB)
 
-  val adapterSystem: VertxAdapterSystem = VertxAdapterSystem(VertxAdapterSystemConfig(
-    VertxAdapterConfig.fromLog(logA)
-      .sendTo { case _ => Endpoints.Processor }
-      .atLeastOnce(confirmationType = Batch(2), confirmationTimeout = 2.seconds)
-      .as("logA-processor"),
-    VertxAdapterConfig.fromEndpoints(Endpoints.Writer)
-      .writeTo(logB)
-      .as("logB-writer"),
-    VertxAdapterConfig.fromLog(logB)
-      .publishTo { case _ => Endpoints.PublishReceiver }
-      .as("logB-publisher")), vertx, new DiskStorageProvider("target/progress/vertx-scala", vertx))
+  val adapterSystemConfig =
+    VertxAdapterSystemConfig()
+      .addAdapter(
+        VertxAdapterConfig.fromLog(logA)
+          .sendTo { case _ => Endpoints.Processor }
+          .atLeastOnce(confirmationType = Batch(2), confirmationTimeout = 2.seconds)
+          .as("logA-processor"))
+      .addAdapter(
+        VertxAdapterConfig.fromEndpoints(Endpoints.Writer)
+          .writeTo(logB)
+          .as("logB-writer"))
+      .addAdapter(VertxAdapterConfig.fromLog(logB)
+        .publishTo { case _ => Endpoints.PublishReceiver }
+        .as("logB-publisher"))
+      .registerDefaultCodecFor(classOf[Event])
+
+  val adapterSystem: VertxAdapterSystem = VertxAdapterSystem(adapterSystemConfig, vertx, new DiskStorageProvider("target/progress/vertx-scala", vertx))
 
   (for {
     _ <- vertx.deploy[ProcessorVerticle]()
@@ -95,7 +103,7 @@ object VertxAdapterExample extends App {
   val reader = system.actorOf(Props(new EventLogReader("reader", logB, eventCount)))
 
   val runId = UUID.randomUUID().toString.take(5)
-  (1 to eventCount) map (i => s"event[$runId]-$i") foreach { event =>
+  (1 to eventCount) map (i => Event(s"[$runId]-$i")) foreach { event =>
     writer.write(List(event))
     Thread.sleep(100)
   }
@@ -113,13 +121,13 @@ class ProcessorVerticle extends AbstractVerticle {
   import VertxHandlerConverters._
 
   val r = Random
-  var confirmedEvents = Set[String]()
+  var confirmedEvents = Set[Event]()
 
   override def start(): Unit = {
-    val messageWriter = vertx.eventBus().sender[String](Endpoints.Writer)
+    val messageWriter = vertx.eventBus().sender[Event](Endpoints.Writer)
 
-    vertx.eventBus().consumer[String](Endpoints.Processor, new Handler[Message[String]] {
-      override def handle(msg: Message[String]): Unit = {
+    vertx.eventBus().consumer[Event](Endpoints.Processor, new Handler[Message[Event]] {
+      override def handle(msg: Message[Event]): Unit = {
         val ev = msg.body()
 
         if (confirmedEvents.contains(ev)) {
@@ -129,7 +137,7 @@ class ProcessorVerticle extends AbstractVerticle {
         } else {
           println(s"[v_processor] processed [$ev]")
 
-          messageWriter.send[Any](s"*processed*$ev", { (ar: AsyncResult[Message[Any]]) =>
+          messageWriter.send[Event](ev.copy(id = s"*processed*${ev.id}"), { (ar: AsyncResult[Message[Event]]) =>
             if (ar.succeeded()) {
               confirmedEvents = confirmedEvents + ev
               msg.reply(null)
@@ -148,7 +156,7 @@ class ReaderVerticle extends AbstractVerticle {
   import VertxHandlerConverters._
 
   override def start(): Unit = {
-    vertx.eventBus().consumer[String](Endpoints.PublishReceiver).handler({ (msg: Message[String]) =>
+    vertx.eventBus().consumer[Event](Endpoints.PublishReceiver).handler({ (msg: Message[Event]) =>
       println(s"[${config.getString("name")}]  received  [${msg.body}]")
     }.asVertxHandler)
   }
