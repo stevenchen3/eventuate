@@ -20,6 +20,7 @@ import akka.actor._
 import akka.pattern.{ ask, pipe }
 import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorPublisherMessage._
+import akka.stream.scaladsl.Source
 import akka.util.Timeout
 
 import com.rbmhtechnology.eventuate.DurableEvent
@@ -28,19 +29,21 @@ import com.rbmhtechnology.eventuate.EventsourcingProtocol._
 import scala.collection.immutable.Seq
 import scala.concurrent.duration._
 
-object DurableEventReader {
+object DurableEventSource {
+  def apply(eventLog: ActorRef, max: Int): Source[DurableEvent, ActorRef] =
+    Source.actorPublisher[DurableEvent](DurableEventSourceActor.props(eventLog, max))
+}
+private object DurableEventSourceActor {
   case object Paused
 
-  def props(eventLog: ActorRef, fromSequenceNr: Long = 1L, aggregateId: Option[String] = None): Props =
-    Props(new DurableEventReader(eventLog, fromSequenceNr, aggregateId))
+  def props(eventLog: ActorRef, max: Int, fromSequenceNr: Long = 1L, aggregateId: Option[String] = None): Props =
+    Props(new DurableEventSourceActor(eventLog, max, fromSequenceNr, aggregateId))
 }
 
-class DurableEventReader(eventLog: ActorRef, fromSequenceNr: Long, aggregateId: Option[String]) extends ActorPublisher[DurableEvent] with ActorLogging {
-  import DurableEventReader._
+private class DurableEventSourceActor(eventLog: ActorRef, max: Int, fromSequenceNr: Long, aggregateId: Option[String]) extends ActorPublisher[DurableEvent] with ActorLogging {
+  import DurableEventSourceActor._
 
-  private val bufSize = 16
   private var buf: Vector[DurableEvent] = Vector.empty
-
   private var progress: Long = fromSequenceNr - 1L
   private var schedule: Option[Cancellable] = None
 
@@ -115,7 +118,7 @@ class DurableEventReader(eventLog: ActorRef, fromSequenceNr: Long, aggregateId: 
     implicit val timeout = Timeout(10.seconds)
     val subscriber = if (subscribe) Some(self) else None
 
-    eventLog ? Replay(progress + 1L, bufSize, subscriber, aggregateId, 1) recover {
+    eventLog ? Replay(progress + 1L, max, subscriber, aggregateId, 1) recover {
       case t => ReplayFailure(t, 1)
     } pipeTo self
   }

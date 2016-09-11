@@ -34,7 +34,7 @@ class DurableEventReaderIntegrationSpec extends TestKit(ActorSystem("test")) wit
   "A DurableEventReader" must {
     "emit events from an event log" in {
       val writer = new EventLogWriter("writer", log)
-      val source = Source.actorPublisher[DurableEvent](DurableEventReader.props(log))
+      val source = DurableEventSource(log, 16)
       val probe = source.take(4).runWith(TestSink.probe)
 
       val abc = writer.write(List("a", "b", "c")).await
