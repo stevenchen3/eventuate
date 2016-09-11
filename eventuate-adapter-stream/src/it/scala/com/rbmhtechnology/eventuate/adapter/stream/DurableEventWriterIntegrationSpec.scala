@@ -40,7 +40,7 @@ class DurableEventWriterIntegrationSpec extends TestKit(ActorSystem("test")) wit
   "A DurableEventWriter" must {
     "write events to a log and emit the logged events" in {
       val (src, snk) = TestSource.probe[DurableEvent]
-        .via(new DurableEventWriter(log))
+        .via(DurableEventWriter(log, 2))
         .toMat(TestSink.probe[DurableEvent])(Keep.both)
         .run()
 
