@@ -405,6 +405,36 @@ class RecoverySpecLeveldb extends WordSpec with Matchers with MultiLocationSpecL
       endpointC2.recover().await
       assertConvergence(cs.toSet + "b" + "a", endpointC2)
     }
+    "allow to write more events after partial recovery over a filtered connection" in {
+      val locationA = location("A", customConfig = RecoverySpecLeveldb.config)
+      def newLocationB = location("B", customConfig = RecoverySpecLeveldb.config, customPort = customPort)
+      val locationB1 = newLocationB
+
+      val endpointA = locationA.endpoint(Set("L1"), Set(replicationConnection(locationB1.port)))
+      def newEndpointB(l: Location, activate: Boolean = true) = l.endpoint(
+        Set("L1"),
+        Set(replicationConnection(locationA.port)),
+        targetFilters(Map(endpointA.logId("L1") -> new PrefixesFilter("a"))), // A does not receive bs
+        activate = activate)
+      val endpointB1 = newEndpointB(locationB1)
+
+      val logDirB = logDirectory(endpointB1.target("L1"))
+
+      val cs = (1 to 5).map("c" + _)
+      newWriter(endpointB1).write(List("b", "a1"))
+      assertConvergence(Set("a1"), endpointA)
+
+      // disaster on B
+      locationB1.terminate().await
+      FileUtils.deleteDirectory(logDirB)
+
+      val locationB2 = newLocationB
+      val endpointB2 = newEndpointB(locationB2, activate = false)
+
+      endpointB2.recover().await
+      newWriter(endpointB2).write(List("a2"))
+      assertConvergence(Set("a1", "a2"), endpointA)
+    }
   }
 
   "A replication endpoint" must {

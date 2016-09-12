@@ -575,7 +575,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
         // 100% filtering coverage for certain replication network topologies.
         acc
       case (acc, e) =>
-        snr += 1L
+        snr = (snr + 1) max e.vectorTimestamp.value.getOrElse(id, 0)
 
         val e2 = e.prepare(id, snr, e.systemTimestamp)
         lvv = lvv.merge(e2.vectorTimestamp)
