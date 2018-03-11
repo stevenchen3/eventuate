@@ -49,6 +49,15 @@ object RecoverySpecLeveldb {
     }
   }
 
+  def assertConvergence(expected: Set[String], endpoints: ReplicationEndpoint*): Unit = {
+    val probes = endpoints.map { endpoint =>
+      val probe = new TestProbe(endpoint.system)
+      endpoint.system.actorOf(Props(new ConvergenceView(s"p-${endpoint.id}", endpoint.logs("L1"), expected.size, probe.ref)))
+      probe
+    }
+    probes.foreach(_.expectMsg(expected))
+  }
+
   val config = ConfigFactory.parseString(
     """
       |eventuate.log.replication.retry-delay = 1s
@@ -71,7 +80,7 @@ object RecoverySpecLeveldb {
 
     override def receive: Receive = {
       case GetReplicationProgress(_) => sender() ! GetReplicationProgressesFailure(exception)
-      case m => logActor.forward(m)
+      case m                         => logActor.forward(m)
     }
   }
 
@@ -96,15 +105,6 @@ class RecoverySpecLeveldb extends WordSpec with Matchers with MultiLocationSpecL
   override val logFactory: String => Props =
     id => SingleLocationSpecLeveldb.TestEventLog.props(id, batching = true)
 
-  def assertConvergence(expected: Set[String], endpoints: ReplicationEndpoint *): Unit = {
-    val probes = endpoints.map { endpoint =>
-      val probe = new TestProbe(endpoint.system)
-      endpoint.system.actorOf(Props(new ConvergenceView(s"p-${endpoint.id}", endpoint.logs("L1"), expected.size, probe.ref)))
-      probe
-    }
-    probes.foreach(_.expectMsg(expected))
-  }
-
   "Replication endpoint recovery" must {
     "disallow activation of endpoint during and after recovery" in {
       val locationA = location("A", customConfig = RecoverySpecLeveldb.config)
@@ -115,9 +115,9 @@ class RecoverySpecLeveldb extends WordSpec with Matchers with MultiLocationSpecL
 
       val recovery = endpointA.recover()
 
-      an [IllegalStateException] shouldBe thrownBy(endpointA.activate())
+      an[IllegalStateException] shouldBe thrownBy(endpointA.activate())
       recovery.await
-      an [IllegalStateException] shouldBe thrownBy(endpointA.activate())
+      an[IllegalStateException] shouldBe thrownBy(endpointA.activate())
     }
     "fail when connected endpoint is unavailable" in {
       val locationA = location("A", customConfig = ConfigFactory.parseString("eventuate.log.recovery.remote-operation-retry-max = 0").withFallback(RecoverySpecLeveldb.config))
@@ -143,7 +143,7 @@ class RecoverySpecLeveldb extends WordSpec with Matchers with MultiLocationSpecL
       val endpointD = locationD.endpoint(Set("L1"), Set(replicationConnection(locationA.port), replicationConnection(locationB.port), replicationConnection(locationC.port)), activate = false)
 
       val expected = the[RecoveryException] thrownBy endpointD.recover().await
-      expected.getMessage should include (GetProgressException.getMessage)
+      expected.getMessage should include(GetProgressException.getMessage)
     }
     "succeed normally if the endpoint was healthy (but not convergent yet)" in {
       val locationB = location("B", customConfig = RecoverySpecLeveldb.config)
@@ -350,7 +350,8 @@ class RecoverySpecLeveldb extends WordSpec with Matchers with MultiLocationSpecL
       val locationA1 = newLocationA
 
       val endpointB = locationB.endpoint(Set("L1"), Set(replicationConnection(locationA1.port)), applicationVersion = oldVersion)
-      def newEndpointA(l: Location, version: ApplicationVersion, activate: Boolean) = l.endpoint(Set("L1"), Set(replicationConnection(locationB.port)), activate = activate)
+      def newEndpointA(l: Location, version: ApplicationVersion, activate: Boolean) =
+        l.endpoint(Set("L1"), Set(replicationConnection(locationB.port)), applicationVersion = version, activate = activate)
       val endpointA1 = newEndpointA(locationA1, oldVersion, activate = true)
 
       val targetA = endpointA1.target("L1")

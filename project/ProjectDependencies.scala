@@ -17,11 +17,13 @@
 import sbt._
 
 object ProjectDependencyVersions {
-  val AkkaVersion = "2.4.4"
+  val AkkaVersion = "2.4.12"
   val CassandraVersion = "3.4"
   val Log4jVersion = "2.5"
   val ProtobufVersion = "2.5.0"
   val SparkVersion = "1.6.1"
+  val VertxVersion = "3.0.0"
+  val ExampleVertxVersion = "3.3.2"
 }
 
 object ProjectDependencies {
@@ -33,6 +35,8 @@ object ProjectDependencies {
   val Protobuf =             "com.google.protobuf"        % "protobuf-java"             % ProtobufVersion
   val JunitInterface =       "com.novocode"               % "junit-interface"           % "0.11"
   val AkkaRemote =           "com.typesafe.akka"         %% "akka-remote"               % AkkaVersion
+  val AkkaStream =           "com.typesafe.akka"         %% "akka-stream"               % AkkaVersion
+  val AkkaStreamTestkit =    "com.typesafe.akka"         %% "akka-stream-testkit"       % AkkaVersion
   val AkkaTestkit =          "com.typesafe.akka"         %% "akka-testkit"              % AkkaVersion
   val AkkaTestkitMultiNode = "com.typesafe.akka"         %% "akka-multi-node-testkit"   % AkkaVersion
   val CommonsIo =            "commons-io"                 % "commons-io"                % "2.4"
@@ -46,8 +50,12 @@ object ProjectDependencies {
   val CassandraUnit =        "org.cassandraunit"          % "cassandra-unit"            % "3.0.0.1"
   val Leveldb =              "org.fusesource.leveldbjni"  % "leveldbjni-all"            % "1.8"
   val Sigar =                "org.fusesource"             % "sigar"                     % "1.6.4"
-  val Java8Compat =          "org.scala-lang.modules"     % "scala-java8-compat_2.11"   % "0.7.0"
-  val Scalatest =            "org.scalatest"             %% "scalatest"                 % "2.1.4"
-  val Scalaz =               "org.scalaz"                %% "scalaz-core"               % "7.1.0"
+  val Java8Compat =          "org.scala-lang.modules"    %% "scala-java8-compat"   % "0.8.0"
+  val Scalatest =            "org.scalatest"             %% "scalatest"                 % "3.0.0"
+  val Scalaz =               "org.scalaz"                %% "scalaz-core"               % "7.2.7"
+  val VertxCore =            "io.vertx"                   % "vertx-core"                % VertxVersion
+  val VertxRxJava =          "io.vertx"                   % "vertx-rx-java"             % VertxVersion
+  val ExampleVertxCore =     "io.vertx"                   % "vertx-core"                % ExampleVertxVersion
+  val ExampleVertxRxJava =   "io.vertx"                   % "vertx-rx-java"             % ExampleVertxVersion
 }
 

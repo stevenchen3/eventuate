@@ -27,6 +27,7 @@ import com.rbmhtechnology.eventuate.EventsourcingProtocol.ReplaySuccess;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
+import org.scalatest.junit.JUnitSuite;
 import scala.Option;
 import scala.collection.immutable.$colon$colon;
 import scala.collection.immutable.List$;
@@ -36,7 +37,7 @@ import scala.collection.immutable.Vector$;
 
 import java.util.Arrays;
 
-public abstract class BaseSpec {
+public abstract class BaseSpec extends JUnitSuite {
 
     @SuppressWarnings("ThrowableInstanceNeverThrown")
     public static final Throwable FAILURE = new NoStackTraceException("failure");
@@ -104,7 +105,7 @@ public abstract class BaseSpec {
     @SuppressWarnings("unchecked")
     protected DurableEvent createEvent(final Object payload, final long sequenceNr, final String emitterId, final String logId, final VectorTime timestamp) {
         return new DurableEvent(payload, emitterId, Option.empty(), Set$.MODULE$.<String>empty(), 0L,
-                timestamp, logId, logId, sequenceNr, Option.empty(), Option.empty());
+                timestamp, logId, logId, sequenceNr, Option.empty(), Option.empty(), Option.empty());
     }
 
     protected VectorTime timestamp(final long a, final long b) {

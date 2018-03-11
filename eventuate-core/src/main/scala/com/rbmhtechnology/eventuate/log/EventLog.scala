@@ -165,9 +165,9 @@ trait EventLogSPI[A] { this: Actor =>
   def readReplicationProgress(logId: String): Future[Long]
 
   /**
-   * Asynchronously writes the replication `progress` for given source `logId`.
+   * Asynchronously writes the replication progresses for source log ids given by `progresses` keys.
    */
-  def writeReplicationProgress(logId: String, progress: Long): Future[Unit]
+  def writeReplicationProgresses(progresses: Map[String, Long]): Future[Unit]
 
   /**
    * Asynchronously batch-reads events from the raw event log. At most `max` events must be returned that are
@@ -375,7 +375,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
     case SetReplicationProgress(sourceLogId, progress) =>
       val sdr = sender()
       implicit val dispatcher = context.dispatcher
-      writeReplicationProgress(sourceLogId, progress) onComplete {
+      writeReplicationProgresses(Map(sourceLogId -> progress)) onComplete {
         case Success(_) => sdr ! SetReplicationProgressSuccess(sourceLogId, progress)
         case Failure(e) => sdr ! SetReplicationProgressFailure(e)
       }
@@ -387,7 +387,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
       }
       read(adjustFromSequenceNr(from), clock.sequenceNr, max, emitterAggregateId) onComplete {
         case Success(r) => sdr ! ReplaySuccess(r.events, r.to, iid)
-        case Failure(e) => sdr ! ReplayFailure(e, iid)
+        case Failure(e) => sdr ! ReplayFailure(e, from, iid)
       }
     case Replay(from, max, subscriber, None, iid) =>
       import services.readDispatcher
@@ -397,7 +397,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
       }
       read(adjustFromSequenceNr(from), clock.sequenceNr, max) onComplete {
         case Success(r) => sdr ! ReplaySuccess(r.events, r.to, iid)
-        case Failure(e) => sdr ! ReplayFailure(e, iid)
+        case Failure(e) => sdr ! ReplayFailure(e, from, iid)
       }
     case r @ ReplicationRead(from, max, scanLimit, filter, targetLogId, _, currentTargetVersionVector) =>
       import services.readDispatcher
@@ -423,12 +423,12 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
       sender() ! r
       channel.foreach(_ ! r)
     case w: Write =>
-      processWrites(Seq(w))
+      processWrites(Seq(w.withReplyToDefault(sender())))
     case WriteN(writes) =>
       processWrites(writes)
       sender() ! WriteNComplete
     case w: ReplicationWrite =>
-      processReplicationWrites(Seq(w.copy(replyTo = sender())))
+      processReplicationWrites(Seq(w.withReplyToDefault(sender())))
     case ReplicationWriteN(writes) =>
       processReplicationWrites(writes)
       sender() ! ReplicationWriteNComplete
@@ -524,16 +524,16 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
   }
 
   private def processReplicationWrites(writes: Seq[ReplicationWrite]): Unit = {
-    writes.foreach(w => replicaVersionVectors = replicaVersionVectors.updated(w.sourceLogId, w.currentSourceVersionVector))
-    writeBatches(writes, prepareReplicatedEvents) match {
+    for { w <- writes; (id, m) <- w.metadata } replicaVersionVectors = replicaVersionVectors.updated(id, m.currentVersionVector)
+    writeBatches(writes, prepareReplicatedEvents(_, _, currentSystemTime)) match {
       case Success((updatedWrites, updatedEvents, clock2)) =>
         clock = clock2
         updatedWrites.foreach { w =>
-          val ws = ReplicationWriteSuccess(w.size, w.replicationProgress, w.sourceLogId, clock2.versionVector, w.continueReplication)
+          val ws = ReplicationWriteSuccess(w.events, w.metadata.mapValues(_.withVersionVector(clock2.versionVector)), w.continueReplication)
           registry.notifySubscribers(w.events)
           channel.foreach(_ ! w)
           implicit val dispatcher = context.system.dispatchers.defaultGlobalDispatcher
-          writeReplicationProgress(w.sourceLogId, w.replicationProgress) onComplete {
+          writeReplicationProgresses(w.replicationProgresses) onComplete {
             case Success(_) =>
               w.replyTo ! ws
             case Failure(e) =>
@@ -582,7 +582,7 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
     (updated, clock.copy(sequenceNr = snr, versionVector = lvv))
   }
 
-  private def prepareReplicatedEvents(events: Seq[DurableEvent], clock: EventLogClock): (Seq[DurableEvent], EventLogClock) = {
+  private def prepareReplicatedEvents(events: Seq[DurableEvent], clock: EventLogClock, systemTimestamp: Long): (Seq[DurableEvent], EventLogClock) = {
     var snr = clock.sequenceNr
     var lvv = clock.versionVector
 
@@ -596,7 +596,8 @@ abstract class EventLog[A <: EventLogState](id: String) extends Actor with Event
       case (acc, e) =>
         snr += 1
 
-        val e2 = e.prepare(id, snr, e.systemTimestamp)
+        val eventSystemTimestamp = if (e.systemTimestamp != 0L) e.systemTimestamp else systemTimestamp
+        val e2 = e.prepare(id, snr, eventSystemTimestamp)
         lvv = lvv.merge(e2.vectorTimestamp)
         acc :+ e2
     }

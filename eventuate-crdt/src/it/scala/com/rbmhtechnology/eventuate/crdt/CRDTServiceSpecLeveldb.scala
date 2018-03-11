@@ -18,11 +18,12 @@ package com.rbmhtechnology.eventuate.crdt
 
 import akka.actor._
 import akka.testkit._
-
-import com.rbmhtechnology.eventuate.SingleLocationSpecLeveldb
+import com.rbmhtechnology.eventuate.{ DurableEvent, SingleLocationSpecLeveldb }
 import com.rbmhtechnology.eventuate.utilities._
-
 import org.scalatest._
+
+import scala.concurrent.Future
+import scala.util.{ Failure, Try }
 
 class CRDTServiceSpecLeveldb extends TestKit(ActorSystem("test")) with WordSpecLike with Matchers with SingleLocationSpecLeveldb {
   "A CRDTService" must {
@@ -38,8 +39,25 @@ class CRDTServiceSpecLeveldb extends TestKit(ActorSystem("test")) with WordSpecL
       val service2 = new MVRegisterService[Int]("b", log)
       val service3 = new LWWRegisterService[Int]("c", log)
       service1.update("a", 1).await should be(1)
-      service2.set("a", 1).await should be(Set(1))
-      service3.set("a", 1).await should be(Some(1))
+      service2.assign("a", 1).await should be(Set(1))
+      service3.assign("a", 1).await should be(Some(1))
+    }
+    "return CRDT's prepare failures as failed future" in {
+      class PrepareException extends RuntimeException
+      implicit object FailingAtPrepareCRDTServiceOps extends CRDTServiceOps[Unit, Unit] {
+        override def zero: Unit = ()
+        override def value(crdt: Unit): Unit = ()
+        override def prepare(crdt: Unit, operation: Any): Try[Option[Any]] = Failure(new PrepareException)
+        override def effect(crdt: Unit, operation: Any, event: DurableEvent): Unit = ()
+      }
+      class FailingAtPrepareCRDTService(val serviceId: String, val log: ActorRef)(implicit val system: ActorSystem, val ops: CRDTServiceOps[Unit, Unit])
+        extends CRDTService[Unit, Unit] {
+        def operation(crdtId: String): Future[Unit] = op(crdtId, ())
+        start()
+      }
+
+      val service = new FailingAtPrepareCRDTService("a", log)
+      intercept[PrepareException](service.operation("a").await)
     }
   }
 
@@ -69,7 +87,7 @@ class CRDTServiceSpecLeveldb extends TestKit(ActorSystem("test")) with WordSpecL
     }
     "return the written value of an MVRegister" in {
       val service = new MVRegisterService[Int]("a", log)
-      service.set("a", 1).await should be(Set(1))
+      service.assign("a", 1).await should be(Set(1))
       service.value("a").await should be(Set(1))
     }
   }
@@ -81,7 +99,7 @@ class CRDTServiceSpecLeveldb extends TestKit(ActorSystem("test")) with WordSpecL
     }
     "return the written value of an LWWRegister" in {
       val service = new LWWRegisterService[Int]("a", log)
-      service.set("a", 1).await should be(Some(1))
+      service.assign("a", 1).await should be(Some(1))
       service.value("a").await should be(Some(1))
     }
   }

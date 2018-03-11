@@ -40,7 +40,6 @@ class BasicReplicationThroughputSpecCassandraMultiJvmNode4 extends BasicReplicat
 class BasicReplicationThroughputSpecCassandraMultiJvmNode5 extends BasicReplicationThroughputSpecCassandra
 class BasicReplicationThroughputSpecCassandraMultiJvmNode6 extends BasicReplicationThroughputSpecCassandra
 
-
 class BasicCausalitySpecCassandra extends BasicCausalitySpec(new BasicCausalityConfig(providerConfig)) with MultiNodeSupportCassandra {
   override def logName = "bc"
 }
@@ -58,10 +57,3 @@ class FailureDetectionSpecCassandra extends FailureDetectionSpec(new FailureDete
 }
 class FailureDetectionSpecCassandraMultiJvmNode1 extends FailureDetectionSpecCassandra
 class FailureDetectionSpecCassandraMultiJvmNode2 extends FailureDetectionSpecCassandra
-
-class FilteredReplicationSpecCassandra extends FilteredReplicationSpec(new FilteredReplicationConfig(providerConfig)) with MultiNodeSupportCassandra {
-  override def logName = "fr"
-}
-class FilteredReplicationSpecCassandraMultiJvmNode1 extends FilteredReplicationSpecCassandra
-class FilteredReplicationSpecCassandraMultiJvmNode2 extends FilteredReplicationSpecCassandra
-

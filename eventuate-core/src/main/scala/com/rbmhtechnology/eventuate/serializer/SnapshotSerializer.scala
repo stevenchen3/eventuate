@@ -18,7 +18,6 @@ package com.rbmhtechnology.eventuate.serializer
 
 import akka.actor._
 import akka.serialization.Serializer
-
 import com.rbmhtechnology.eventuate._
 import com.rbmhtechnology.eventuate.ConfirmedDelivery._
 import com.rbmhtechnology.eventuate.PersistOnEvent._
@@ -29,9 +28,10 @@ import scala.collection.JavaConverters._
 import scala.collection.immutable.VectorBuilder
 
 class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
-  val eventSerializer = new DurableEventSerializer(system)
+  val eventSerializer = new DelegatingDurableEventSerializer(system)
 
   import eventSerializer.commonSerializer
+  import commonSerializer.payloadSerializer
 
   val SnapshotClass = classOf[Snapshot]
   val ConcurrentVersionsTreeClass = classOf[ConcurrentVersionsTree[_, _]]
@@ -71,7 +71,7 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
 
   private def snapshotFormatBuilder(snapshot: Snapshot): SnapshotFormat.Builder = {
     val builder = SnapshotFormat.newBuilder
-    builder.setPayload(commonSerializer.payloadFormatBuilder(snapshot.payload.asInstanceOf[AnyRef]))
+    builder.setPayload(payloadSerializer.payloadFormatBuilder(snapshot.payload.asInstanceOf[AnyRef]))
     builder.setEmitterId(snapshot.emitterId)
     builder.setLastEvent(eventSerializer.durableEventFormatBuilder(snapshot.lastEvent))
     builder.setCurrentTime(commonSerializer.vectorTimeFormatBuilder(snapshot.currentTime))
@@ -91,14 +91,17 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
   private def deliveryAttemptFormatBuilder(deliveryAttempt: DeliveryAttempt): DeliveryAttemptFormat.Builder = {
     val builder = DeliveryAttemptFormat.newBuilder
     builder.setDeliveryId(deliveryAttempt.deliveryId)
-    builder.setMessage(commonSerializer.payloadFormatBuilder(deliveryAttempt.message.asInstanceOf[AnyRef]))
+    builder.setMessage(payloadSerializer.payloadFormatBuilder(deliveryAttempt.message.asInstanceOf[AnyRef]))
     builder.setDestination(deliveryAttempt.destination.toSerializationFormat)
     builder
   }
 
   private def persistOnEventRequestFormatBuilder(persistOnEventRequest: PersistOnEventRequest): PersistOnEventRequestFormat.Builder = {
     val builder = PersistOnEventRequestFormat.newBuilder
-    builder.setPersistOnEventSequenceNr(persistOnEventRequest.persistOnEventSequenceNr)
+    builder.setSequenceNr(persistOnEventRequest.persistOnEventSequenceNr)
+    persistOnEventRequest.persistOnEventId.foreach { eventId =>
+      builder.setEventId(eventSerializer.eventIdFormatBuilder(eventId))
+    }
     builder.setInstanceId(persistOnEventRequest.instanceId)
 
     persistOnEventRequest.invocations.foreach { invocation =>
@@ -110,7 +113,7 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
 
   private def persistOnEventInvocationFormatBuilder(persistOnEventInvocation: PersistOnEventInvocation): PersistOnEventInvocationFormat.Builder = {
     val builder = PersistOnEventInvocationFormat.newBuilder
-    builder.setEvent(commonSerializer.payloadFormatBuilder(persistOnEventInvocation.event.asInstanceOf[AnyRef]))
+    builder.setEvent(payloadSerializer.payloadFormatBuilder(persistOnEventInvocation.event.asInstanceOf[AnyRef]))
 
     persistOnEventInvocation.customDestinationAggregateIds.foreach { dest =>
       builder.addCustomDestinationAggregateIds(dest)
@@ -168,7 +171,7 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
       else durableEvent.localSequenceNr
 
     Snapshot(
-      commonSerializer.payload(snapshotFormat.getPayload),
+      payloadSerializer.payload(snapshotFormat.getPayload),
       snapshotFormat.getEmitterId,
       durableEvent,
       commonSerializer.vectorTime(snapshotFormat.getCurrentTime),
@@ -180,7 +183,7 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
   private def deliveryAttempt(deliveryAttemptFormat: DeliveryAttemptFormat): DeliveryAttempt = {
     DeliveryAttempt(
       deliveryAttemptFormat.getDeliveryId,
-      commonSerializer.payload(deliveryAttemptFormat.getMessage),
+      payloadSerializer.payload(deliveryAttemptFormat.getMessage),
       ActorPath.fromString(deliveryAttemptFormat.getDestination))
   }
 
@@ -191,8 +194,11 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
       invocationsBuilder += persistOnEventInvocation(pif)
     }
 
+    val persistOnEventReference = if (persistOnEventRequestFormat.hasEventId) Some(eventSerializer.eventId(persistOnEventRequestFormat.getEventId)) else None
+
     PersistOnEventRequest(
-      persistOnEventRequestFormat.getPersistOnEventSequenceNr,
+      persistOnEventRequestFormat.getSequenceNr,
+      persistOnEventReference,
       invocationsBuilder.result(),
       persistOnEventRequestFormat.getInstanceId)
   }
@@ -203,7 +209,7 @@ class SnapshotSerializer(system: ExtendedActorSystem) extends Serializer {
     }
 
     PersistOnEventInvocation(
-      commonSerializer.payload(persistOnEventInvocationFormat.getEvent),
+      payloadSerializer.payload(persistOnEventInvocationFormat.getEvent),
       customDestinationAggregateIds)
   }
 

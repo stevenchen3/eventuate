@@ -17,9 +17,15 @@
 package com.rbmhtechnology.eventuate
 
 import akka.actor._
+import com.typesafe.config.Config
 
 import scala.concurrent.Future
 import scala.util._
+
+private class EventsourcedWriterSettings(config: Config) {
+  val replayRetryMax =
+    config.getInt("eventuate.log.replay-retry-max")
+}
 
 object EventsourcedWriter {
   /**
@@ -75,7 +81,10 @@ object EventsourcedWriter {
  * @tparam R Result type of the asynchronous read operation.
  * @tparam W Result type of the asynchronous write operations.
  */
-trait EventsourcedWriter[R, W] extends EventsourcedView {
+trait EventsourcedWriter[R, W] extends EventsourcedView
+  with EventsourcedWriterSuccessHandlers[R, W]
+  with EventsourcedWriterFailureHandlers {
+
   import EventsourcedWriter._
   import EventsourcingProtocol._
   import context.dispatcher
@@ -85,6 +94,8 @@ trait EventsourcedWriter[R, W] extends EventsourcedView {
 
   private case class WriteSuccess(result: W, instanceId: Int)
   private case class WriteFailure(cause: Throwable, instanceId: Int)
+
+  private val settings = new EventsourcedWriterSettings(context.system.settings.config)
 
   private var numPending: Int = 0
 
@@ -165,7 +176,7 @@ trait EventsourcedWriter[R, W] extends EventsourcedView {
   /**
    * Internal API.
    */
-  override private[eventuate] def initiating: Receive = {
+  override private[eventuate] def initiating(replayAttempts: Int): Receive = {
     case ReadSuccess(r, iid) => if (iid == instanceId) {
       readSuccess(r) match {
         case Some(snr) => replay(snr, subscribe = true)
@@ -184,12 +195,14 @@ trait EventsourcedWriter[R, W] extends EventsourcedView {
     case ReplaySuccess(events, progress, iid) => if (iid == instanceId) {
       events.foreach(receiveEvent)
       if (numPending > 0) {
-        context.become(initiatingWrite(progress) orElse initiating)
+        context.become(initiatingWrite(progress) orElse initiating(settings.replayRetryMax))
         write(instanceId)
-      } else replay(progress + 1L)
+      } else {
+        replay(progress + 1L)
+      }
     }
     case other =>
-      super.initiating(other)
+      super.initiating(replayAttempts)(other)
   }
 
   /**
@@ -210,7 +223,7 @@ trait EventsourcedWriter[R, W] extends EventsourcedView {
   private def initiatingWrite(progress: Long): Receive = {
     case WriteSuccess(r, iid) => if (iid == instanceId) {
       writeSuccess(r)
-      context.become(initiating)
+      context.become(initiating(settings.replayRetryMax))
       replay(progress + 1L)
     }
     case WriteFailure(cause, iid) => if (iid == instanceId) {

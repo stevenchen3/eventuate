@@ -20,7 +20,6 @@ import java.io.File
 
 import akka.actor._
 import akka.testkit._
-
 import com.rbmhtechnology.eventuate.log._
 import com.rbmhtechnology.eventuate.log.cassandra._
 import com.rbmhtechnology.eventuate.log.cassandra.CassandraIndex.AggregateEvents
@@ -45,22 +44,20 @@ object SingleLocationSpecCassandra {
     failAfterIndexIncrementWrite: Boolean = false)
 
   object TestEventLog {
-    def props(logId: String, batching: Boolean): Props =
-      props(logId, TestFailureSpec(), None, batching)
+    def props(logId: String, batching: Boolean, aggregateIndexing: Boolean): Props =
+      props(logId, TestFailureSpec(), None, batching, aggregateIndexing, 0L)
 
-    def props(logId: String, failureSpec: TestFailureSpec, indexProbe: ActorRef, batching: Boolean): Props =
-      props(logId, failureSpec, Some(indexProbe), batching)
+    def props(logId: String, failureSpec: TestFailureSpec, indexProbe: ActorRef, batching: Boolean, aggregateIndexing: Boolean, currentSystemTime: Long = 0): Props =
+      props(logId, failureSpec, Some(indexProbe), batching, aggregateIndexing, currentSystemTime)
 
-    def props(logId: String, failureSpec: TestFailureSpec, indexProbe: Option[ActorRef], batching: Boolean): Props = {
-      val logProps = Props(new TestEventLog(logId, failureSpec, indexProbe)).withDispatcher("eventuate.log.dispatchers.write-dispatcher")
+    def props(logId: String, failureSpec: TestFailureSpec, indexProbe: Option[ActorRef], batching: Boolean, aggregateIndexing: Boolean, currentSystemTime: Long): Props = {
+      val logProps = Props(new TestEventLog(logId, failureSpec, indexProbe, aggregateIndexing, currentSystemTime)).withDispatcher("eventuate.log.dispatchers.write-dispatcher")
       Props(new CircuitBreaker(logProps, batching))
     }
   }
 
-  class TestEventLog(id: String, failureSpec: TestFailureSpec, indexProbe: Option[ActorRef])
-    extends CassandraEventLog(id) with SingleLocationSpec.TestEventLog[CassandraEventLogState] {
-
-    override def currentSystemTime: Long = 0L
+  class TestEventLog(id: String, failureSpec: TestFailureSpec, indexProbe: Option[ActorRef], aggregateIndexing: Boolean, override val currentSystemTime: Long = 0)
+    extends CassandraEventLog(id, aggregateIndexing) with SingleLocationSpec.TestEventLog[CassandraEventLogState] {
 
     override def unhandled(message: Any): Unit = message match {
       case "boom" => throw IntegrationTestException
@@ -128,7 +125,7 @@ trait SingleLocationSpecCassandra extends SingleLocationSpec with LocationCleanu
     logProps(logId, TestFailureSpec(), system.deadLetters)
 
   def logProps(logId: String, failureSpec: TestFailureSpec, indexProbe: ActorRef): Props =
-    TestEventLog.props(logId, failureSpec, indexProbe, batching)
+    TestEventLog.props(logId, failureSpec, indexProbe, batching, aggregateIndexing = true, currentSystemTime)
 
   def createLog(failureSpec: TestFailureSpec, indexProbe: ActorRef): ActorRef = {
     generateLogId()

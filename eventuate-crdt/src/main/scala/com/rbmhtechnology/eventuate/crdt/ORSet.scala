@@ -17,11 +17,11 @@
 package com.rbmhtechnology.eventuate.crdt
 
 import akka.actor._
-
 import com.rbmhtechnology.eventuate._
 
 import scala.concurrent.Future
 import scala.collection.immutable.Set
+import scala.util.{ Success, Try }
 
 /**
  * Operation-based OR-Set CRDT. [[Versioned]] entries are uniquely identified with vector timestamps.
@@ -68,18 +68,20 @@ object ORSet {
     override def value(crdt: ORSet[A]): Set[A] =
       crdt.value
 
-    override def prepare(crdt: ORSet[A], operation: Any): Option[Any] = operation match {
-      case op @ RemoveOp(entry, _) => crdt.prepareRemove(entry.asInstanceOf[A]) match {
-        case timestamps if timestamps.nonEmpty =>
-          Some(op.copy(timestamps = timestamps))
-        case _ =>
-          None
+    override def prepare(crdt: ORSet[A], operation: Any): Try[Option[Any]] = operation match {
+      case op @ RemoveOp(entry, _) => Success {
+        crdt.prepareRemove(entry.asInstanceOf[A]) match {
+          case timestamps if timestamps.nonEmpty =>
+            Some(op.copy(timestamps = timestamps))
+          case _ =>
+            None
+        }
       }
       case op =>
         super.prepare(crdt, op)
     }
 
-    override def update(crdt: ORSet[A], operation: Any, event: DurableEvent): ORSet[A] = operation match {
+    override def effect(crdt: ORSet[A], operation: Any, event: DurableEvent): ORSet[A] = operation match {
       case RemoveOp(_, timestamps) =>
         crdt.remove(timestamps)
       case AddOp(entry) =>
@@ -114,9 +116,13 @@ class ORSetService[A](val serviceId: String, val log: ActorRef)(implicit val sys
   start()
 }
 
-/** Persistent add operation */
-private[eventuate] case class AddOp(entry: Any) extends CRDTFormat
+/**
+ * Persistent add operation used for [[ORSet]] and [[ORCart]].
+ */
+case class AddOp(entry: Any) extends CRDTFormat
 
-/** Persistent remove operation */
-private[eventuate] case class RemoveOp(entry: Any, timestamps: Set[VectorTime] = Set.empty) extends CRDTFormat
+/**
+ * Persistent remove operation used for [[ORSet]] and [[ORCart]].
+ */
+case class RemoveOp(entry: Any, timestamps: Set[VectorTime] = Set.empty) extends CRDTFormat
 //#

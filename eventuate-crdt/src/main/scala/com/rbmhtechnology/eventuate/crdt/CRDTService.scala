@@ -58,12 +58,12 @@ trait CRDTServiceOps[A, B] {
   /**
    * Update phase 1 ("atSource"). Prepares an operation for phase 2.
    */
-  def prepare(crdt: A, operation: Any): Option[Any] = Some(operation)
+  def prepare(crdt: A, operation: Any): Try[Option[Any]] = Success(Some(operation))
 
   /**
    * Update phase 2 ("downstream").
    */
-  def update(crdt: A, operation: Any, event: DurableEvent): A
+  def effect(crdt: A, operation: Any, event: DurableEvent): A
 }
 
 object CRDTService {
@@ -194,15 +194,17 @@ trait CRDTService[A, B] {
         sender() ! GetReply(crdtId, ops.value(crdt))
       case Update(`crdtId`, operation) =>
         ops.prepare(crdt, operation) match {
-          case None =>
-            sender() ! UpdateReply(crdtId, ops.value(crdt))
-          case Some(op) =>
+          case Success(Some(op)) =>
             persist(ValueUpdated(op)) {
               case Success(evt) =>
                 sender() ! UpdateReply(crdtId, ops.value(crdt))
               case Failure(err) =>
                 sender() ! Status.Failure(err)
             }
+          case Success(None) =>
+            sender() ! UpdateReply(crdtId, ops.value(crdt))
+          case Failure(err) =>
+            sender() ! Status.Failure(err)
         }
       case Save(`crdtId`) =>
         save(crdt) {
@@ -215,7 +217,7 @@ trait CRDTService[A, B] {
 
     override def onEvent = {
       case evt @ ValueUpdated(operation) =>
-        crdt = ops.update(crdt, operation, lastHandledEvent)
+        crdt = ops.effect(crdt, operation, lastHandledEvent)
         context.parent ! OnChange(crdt, operation)
     }
 

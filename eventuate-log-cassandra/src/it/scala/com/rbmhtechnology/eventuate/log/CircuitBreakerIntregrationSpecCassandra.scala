@@ -31,7 +31,7 @@ import com.typesafe.config._
 
 import org.scalatest._
 import org.scalatest.concurrent.Eventually
-import org.scalatest.time.{Millis, Seconds, Span}
+import org.scalatest.time.{ Millis, Seconds, Span }
 
 import scala.collection.immutable.Seq
 import scala.concurrent._
@@ -58,7 +58,7 @@ object CircuitBreakerIntregrationSpecCassandra {
     appLatch: CountDownLatch,
     logLatch: CountDownLatch)
 
-  class TestEventLog(id: String, failureSpec: TestFailureSpec) extends CassandraEventLog(id) {
+  class TestEventLog(id: String, failureSpec: TestFailureSpec) extends CassandraEventLog(id, aggregateIndexing = true) {
     override private[eventuate] def createEventLogStore(cassandra: Cassandra, logId: String) =
       new TestEventLogStore(cassandra, logId, failureSpec)
   }
@@ -247,7 +247,7 @@ class CircuitBreakerIntregrationSpecCassandra extends TestKit(ActorSystem("test"
   }
 
   def assertUnavailable(): Unit = {
-    val w = ReplicationWrite(Seq(), 0L, "source", VectorTime.Zero)
+    val w = ReplicationWrite(Seq(), Map("source" -> ReplicationMetadata(0L, VectorTime.Zero)))
     eventually {
       intercept[EventLogUnavailableException] { log.ask(w).await }
     }
@@ -255,10 +255,10 @@ class CircuitBreakerIntregrationSpecCassandra extends TestKit(ActorSystem("test"
 
   def write(payload: Any, sequenceNr: Long)(implicit executor: ExecutionContext): Future[Int] = {
     val e = DurableEvent(payload, "emitter", vectorTimestamp = VectorTime("source" -> sequenceNr))
-    val w = ReplicationWrite(Seq(e), sequenceNr, "source", VectorTime.Zero)
+    val w = ReplicationWrite(Seq(e), Map("source" -> ReplicationMetadata(sequenceNr, VectorTime.Zero)))
 
     log.ask(w) flatMap {
-      case s: ReplicationWriteSuccess => Future.successful(s.num)
+      case s: ReplicationWriteSuccess => Future.successful(s.events.size)
       case f: ReplicationWriteFailure => Future.failed(f.cause)
     }
   }

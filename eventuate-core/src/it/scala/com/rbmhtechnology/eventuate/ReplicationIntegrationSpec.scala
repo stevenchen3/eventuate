@@ -16,21 +16,59 @@
 
 package com.rbmhtechnology.eventuate
 
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.ObjectInputStream
+import java.io.ObjectOutputStream
+
 import akka.actor._
+import akka.serialization.Serializer
 import akka.testkit.TestProbe
 import com.rbmhtechnology.eventuate.EndpointFilters.sourceFilters
 import com.rbmhtechnology.eventuate.EndpointFilters.targetOverwritesSourceFilters
 import com.rbmhtechnology.eventuate.ReplicationFilter.NoFilter
 import com.rbmhtechnology.eventuate.ReplicationProtocol.ReplicationEndpointInfo.logId
 import com.rbmhtechnology.eventuate.ReplicationProtocol._
+import com.rbmhtechnology.eventuate.serializer.DurableEventSerializerWithBinaryPayload
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
 import org.scalatest._
 
 import scala.collection.immutable.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util._
+import scala.util.control.Exception.ultimately
 
 object ReplicationIntegrationSpec {
+  class JavaSerializerWithManifest(system: ExtendedActorSystem) extends Serializer {
+    override def includeManifest: Boolean = true
+
+    override val identifier: Int = 647345238
+
+    def toBinary(o: AnyRef): Array[Byte] = {
+      val bos = new ByteArrayOutputStream
+      val out = new ObjectOutputStream(bos)
+      ultimately(out.close())(out.writeObject(o))
+      bos.toByteArray
+    }
+
+    def fromBinary(bytes: Array[Byte], clazz: Option[Class[_]]): AnyRef = {
+      val in = new ObjectInputStream(new ByteArrayInputStream(bytes))
+      ultimately(in.close())(in.readObject())
+    }
+  }
+
+  def javaSerializerWithManifestFor(types: Class[_]*): Config = {
+    ConfigFactory.parseString(
+      s"""
+        |akka.actor.serializers.java-serializer-with-manifest = "com.rbmhtechnology.eventuate.ReplicationIntegrationSpec$$JavaSerializerWithManifest"
+        |akka.actor.serialization-bindings {
+        |  ${types.map(t => s"""  "${t.getName}" = java-serializer-with-manifest""").mkString("\n")}
+        |}
+      """.stripMargin)
+  }
+
   class PayloadEqualityFilter(payload: String) extends ReplicationFilter {
     override def apply(event: DurableEvent): Boolean = {
       event.payload == payload
@@ -47,19 +85,19 @@ object ReplicationIntegrationSpec {
     override val stateSync = false
 
     def onCommand = {
-      case s: String => persist(s) {
+      case s => persist(s) {
         case Success(e) =>
         case Failure(e) => throw e
       }
     }
 
     def onEvent = {
-      case s: String => probe ! s
+      case s => probe ! s
     }
   }
 
-  def replicationConnection(port: Int, filters: Map[String, ReplicationFilter] = Map.empty): ReplicationConnection =
-    ReplicationConnection("127.0.0.1", port, filters)
+  def replicationConnection(port: Int): ReplicationConnection =
+    ReplicationConnection("127.0.0.1", port)
 }
 
 trait ReplicationIntegrationSpec extends WordSpec with Matchers with MultiLocationSpec {
@@ -114,27 +152,6 @@ trait ReplicationIntegrationSpec extends WordSpec with Matchers with MultiLocati
       assertPartialOrderOnAllReplicas("b1", "b2", "b3")
       assertPartialOrderOnAllReplicas("c1", "c2", "c3")
     }
-    "replicate events based on remote filter criteria" in {
-      val locationA = location("A")
-      val locationB = location("B")
-
-      val endpointA = locationA.endpoint(Set("L1"), Set(replicationConnection(locationB.port, filters = Map("L1" -> new PayloadEqualityFilter("b2")))))
-      val endpointB = locationB.endpoint(Set("L1"), Set(replicationConnection(locationA.port, filters = Map("L1" -> new PayloadEqualityFilter("a2")))))
-
-      val actorA = locationA.system.actorOf(Props(new ReplicatedActor("pa", endpointA.logs("L1"), locationA.probe.ref)))
-      val actorB = locationB.system.actorOf(Props(new ReplicatedActor("pb", endpointB.logs("L1"), locationB.probe.ref)))
-
-      actorA ! "a1"
-      actorA ! "a2"
-      actorA ! "a3"
-
-      actorB ! "b1"
-      actorB ! "b2"
-      actorB ! "b3"
-
-      val eventsA = locationA.probe.expectMsgAllOf("a1", "a2", "a3", "b2")
-      val eventsB = locationB.probe.expectMsgAllOf("b1", "b2", "b3", "a2")
-    }
     "replicate events based on local filter criteria" in {
       val locationA = location("A")
       val locationB = location("B")
@@ -143,7 +160,7 @@ trait ReplicationIntegrationSpec extends WordSpec with Matchers with MultiLocati
         sourceFilters(Map("L1" -> new PayloadEqualityFilter("a2"))))
       val endpointB = locationB.endpoint(Set("L1"), Set(replicationConnection(locationA.port)),
         targetOverwritesSourceFilters(
-          Map(logId(locationA.id, "L1")-> new PayloadInequalityFilter("b2")),
+          Map(logId(locationA.id, "L1") -> new PayloadInequalityFilter("b2")),
           Map("L1" -> new PayloadEqualityFilter("b2"))
         ))
 
@@ -161,26 +178,35 @@ trait ReplicationIntegrationSpec extends WordSpec with Matchers with MultiLocati
       val eventsA = locationA.probe.expectMsgAllOf("a1", "a2", "a3", "b1", "b3")
       val eventsB = locationB.probe.expectMsgAllOf("b1", "b2", "b3", "a2")
     }
-    "replicate events based on local and remote filter criteria" in {
-      val locationA = location("A")
-      val locationB = location("B")
+    "replicate events according to BinaryPayload based local filters" in {
+      val locationA = location(
+        "A",
+        customConfig = javaSerializerWithManifestFor(classOf[String], classOf[Integer]))
+      val locationB = location(
+        "B",
+        customConfig = ConfigFactory.parseString(
+          s"akka.actor.serializers.eventuate-durable-event = ${classOf[DurableEventSerializerWithBinaryPayload].getName}"))
+      val locationC = location(
+        "C",
+        customConfig = javaSerializerWithManifestFor(classOf[String], classOf[Integer]))
 
-      val endpointA = locationA.endpoint(Set("L1"), Set(replicationConnection(locationB.port, filters = Map("L1" -> new PayloadInequalityFilter("b1")))), sourceFilters(Map("L1" -> new PayloadInequalityFilter("a2"))))
-      val endpointB = locationB.endpoint(Set("L1"), Set(replicationConnection(locationA.port, filters = Map("L1" -> new PayloadInequalityFilter("a1")))), sourceFilters(Map("L1" -> new PayloadInequalityFilter("b2"))))
+      val endpointA =
+        locationA.endpoint(Set("L1"), Set(replicationConnection(locationB.port)))
+      locationB.endpoint(
+        Set("L1"),
+        Set(replicationConnection(locationA.port), replicationConnection(locationC.port)),
+        sourceFilters(Map("L1" -> BinaryPayloadManifestFilter(".*String".r))))
+      val endpointC =
+        locationC.endpoint(Set("L1"), Set(replicationConnection(locationB.port)))
 
       val actorA = locationA.system.actorOf(Props(new ReplicatedActor("pa", endpointA.logs("L1"), locationA.probe.ref)))
-      val actorB = locationB.system.actorOf(Props(new ReplicatedActor("pb", endpointB.logs("L1"), locationB.probe.ref)))
+      locationC.system.actorOf(Props(new ReplicatedActor("pc", endpointC.logs("L1"), locationC.probe.ref)))
 
       actorA ! "a1"
+      actorA ! 2
       actorA ! "a2"
-      actorA ! "a3"
 
-      actorB ! "b1"
-      actorB ! "b2"
-      actorB ! "b3"
-
-      val eventsA = locationA.probe.expectMsgAllOf("a1", "a2", "a3", "b3")
-      val eventsB = locationB.probe.expectMsgAllOf("b1", "b2", "b3", "a3")
+      locationC.probe.expectMsgAllOf("a1", "a2")
     }
     "immediately attempt next batch if last replicated batch was not empty" in {
       val locationA = location("A")
@@ -231,7 +257,7 @@ trait ReplicationIntegrationSpec extends WordSpec with Matchers with MultiLocati
       probeAvailable1.expectMsg(Available(endpointB1.id, "L1"))
       Await.result(locationB1.terminate(), 10.seconds)
       probeUnavailable.expectMsgPF() {
-        case Unavailable(endpointB1.id, "L1", causes) if causes.nonEmpty => causes.head shouldBe a [ReplicationReadTimeoutException]
+        case Unavailable(endpointB1.id, "L1", causes) if causes.nonEmpty => causes.head shouldBe a[ReplicationReadTimeoutException]
       }
 
       val locationB2 = location("B", customPort = customPort)
